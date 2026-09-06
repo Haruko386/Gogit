@@ -33,6 +33,8 @@ func Suggest(line string, cursor int) []Suggestion {
 	)
 }
 
+// matching filters candidates to those starting with prefix, skipping the
+// candidate whose value already equals prefix and any value present in excluded.
 func matching(candidates []Suggestion, prefix string, excluded map[string]struct{}) []Suggestion {
 	matched := make([]Suggestion, 0, len(candidates))
 
@@ -55,6 +57,9 @@ func matching(candidates []Suggestion, prefix string, excluded map[string]struct
 	return matched
 }
 
+// usedOptions collects the option names that already appear among words, so
+// they can be excluded from further suggestions. Values passed with "=" are
+// keyed by the option name only.
 func usedOptions(words []string) map[string]struct{} {
 	used := make(map[string]struct{}, len(words))
 
