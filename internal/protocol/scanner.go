@@ -7,7 +7,15 @@ import (
 	"fmt"
 )
 
-const markerPrefix = "__GOGIT_READY_"
+const (
+	markerPrefix   = "__GOGIT_READY_"
+	fieldSeparator = byte(0x1f)
+)
+
+type Prompt struct {
+	Environment string
+	Directory   string
+}
 
 // NewMarker creates a marker that identifies the shell prompt belonging to
 // this Gogit process.
@@ -20,10 +28,21 @@ func NewMarker() (string, error) {
 	return markerPrefix + hex.EncodeToString(random) + "__", nil
 }
 
+func BeginMarker(marker string) string {
+	return marker + "PROMPT_BEGIN__"
+}
+
+func EndMarker(marker string) string {
+	return marker + "PROMPT_END__"
+}
+
 // Scanner removes shell-ready markers from arbitrarily chunked PTY output.
 type Scanner struct {
-	marker  []byte
+	begin   []byte
+	end     []byte
 	pending []byte
+	frame   []byte
+	inside  bool
 }
 
 // NewScanner creates a scanner for one shell session.
@@ -33,47 +52,104 @@ func NewScanner(marker string) *Scanner {
 	}
 
 	return &Scanner{
-		marker: []byte(marker),
+		begin: []byte(BeginMarker(marker)),
+		end:   []byte(EndMarker(marker)),
 	}
 }
 
 // Push accepts the next PTY output chunk.
 //
 // visible contains bytes that may be printed to the user's terminal.
-// readyCount reports how many complete prompt markers were found.
-func (s *Scanner) Push(data []byte) (visible []byte, readyCount int) {
+// prompts contains the state carried by each complete prompt frame.
+func (s *Scanner) Push(data []byte) (
+	visible []byte,
+	prompts []Prompt,
+) {
 	buffer := make([]byte, 0, len(s.pending)+len(data))
 	buffer = append(buffer, s.pending...)
 	buffer = append(buffer, data...)
 	s.pending = nil
 
 	for len(buffer) > 0 {
-		index := bytes.Index(buffer, s.marker)
+		delimiter := s.begin
+		if s.inside {
+			delimiter = s.end
+		}
+
+		index := bytes.Index(buffer, delimiter)
 		if index >= 0 {
-			visible = append(visible, buffer[:index]...)
-			buffer = buffer[index+len(s.marker):]
-			readyCount++
+			stable := buffer[:index]
+
+			if s.inside {
+				s.frame = append(s.frame, stable...)
+			} else {
+				visible = append(visible, stable...)
+			}
+
+			buffer = buffer[index+len(delimiter):]
+
+			if s.inside {
+				prompts = append(prompts, parsePrompt(s.frame))
+				s.frame = nil
+				s.inside = false
+			} else {
+				s.inside = true
+			}
+
 			continue
 		}
 
-		keep := matchingSuffixLength(buffer, s.marker)
-		visible = append(visible, buffer[:len(buffer)-keep]...)
+		keep := matchingSuffixLength(buffer, delimiter)
+		stable := buffer[:len(buffer)-keep]
+
+		if s.inside {
+			s.frame = append(s.frame, stable...)
+		} else {
+			visible = append(visible, stable...)
+		}
 
 		if keep > 0 {
-			s.pending = append(s.pending, buffer[len(buffer)-keep:]...)
+			s.pending = append(
+				s.pending,
+				buffer[len(buffer)-keep:]...,
+			)
 		}
+
 		break
 	}
 
-	return visible, readyCount
+	return visible, prompts
 }
 
 // Flush releases bytes that were temporarily held because they looked like
 // the beginning of a marker.
 func (s *Scanner) Flush() []byte {
-	remaining := append([]byte(nil), s.pending...)
+	remaining := make([]byte, 0, len(s.frame)+len(s.pending))
+	remaining = append(remaining, s.frame...)
+	remaining = append(remaining, s.pending...)
+
 	s.pending = nil
+	s.frame = nil
+	s.inside = false
+
 	return remaining
+}
+
+func parsePrompt(data []byte) Prompt {
+	environment, directory, found := bytes.Cut(
+		data,
+		[]byte{fieldSeparator},
+	)
+	if !found {
+		return Prompt{
+			Directory: string(data),
+		}
+	}
+
+	return Prompt{
+		Environment: string(environment),
+		Directory:   string(directory),
+	}
 }
 
 // matchingSuffixLength returns the longest suffix of data that is also a

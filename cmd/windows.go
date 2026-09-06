@@ -4,29 +4,67 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+
+	"github.com/Haruko386/Gogit/internal/protocol"
 )
 
 func systemShell(marker string) *exec.Cmd {
-	script := fmt.Sprintf(`function global:prompt {'%s'}`, marker)
+	begin := protocol.BeginMarker(marker)
+	end := protocol.EndMarker(marker)
+
+	script := fmt.Sprintf(`
+$env:CONDA_CHANGEPS1 = 'false'
+$env:VIRTUAL_ENV_DISABLE_PROMPT = '1'
+
+function global:prompt {
+    $environmentName = ''
+
+    if (-not [string]::IsNullOrWhiteSpace(
+        $env:CONDA_DEFAULT_ENV
+    )) {
+        $environmentName = $env:CONDA_DEFAULT_ENV
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace(
+        $env:VIRTUAL_ENV
+    )) {
+		$environmentName = Split-Path -Leaf -Path $env:VIRTUAL_ENV
+    }
+
+    $directory = (
+        $executionContext.SessionState.Path.CurrentLocation.Path
+    )
+
+	return '%s' + $environmentName + [char]31 + $directory + '%s'
+}
+`, begin, end)
+
+	var command *exec.Cmd
 
 	if path, err := exec.LookPath("pwsh.exe"); err == nil {
-		return exec.Command(
+		command = exec.Command(
 			path,
 			"-NoLogo",
-			"-NoProfile",
+			"-NoExit",
+			"-Command",
+			script,
+		)
+	} else {
+		command = exec.Command(
+			"powershell.exe",
+			"-NoLogo",
 			"-NoExit",
 			"-Command",
 			script,
 		)
 	}
 
-	return exec.Command(
-		"powershell.exe",
-		"-NoLogo",
-		"-NoProfile",
-		"-NoExit",
-		"-Command",
-		script,
+	command.Env = append(
+		os.Environ(),
+		"CONDA_CHANGEPS1=false",
+		"VIRTUAL_ENV_DISABLE_PROMPT=1",
 	)
+
+	return command
 }

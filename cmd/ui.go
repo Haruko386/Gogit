@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/Haruko386/Gogit/internal/editor"
 	"github.com/Haruko386/Gogit/internal/history"
@@ -15,8 +16,9 @@ import (
 )
 
 const (
-	gogitPrompt      = "\x1b[36m(Gogit)\x1b[0m "
-	gogitPromptWidth = 8
+	colorCyan   = "\x1b[36m"
+	colorYellow = "\x1b[33m"
+	colorReset  = "\x1b[0m"
 )
 
 type streamEvent struct {
@@ -42,6 +44,8 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 		selected       = -1
 		suggestionMode bool
 		editing        bool
+		prompt         = colorCyan + "(Gogit)" + colorReset + " "
+		promptWidth    = 8
 	)
 
 	render := func() error {
@@ -62,8 +66,8 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 		}
 
 		return writeOutput(renderer.Render(terminal.View{
-			Prompt:      gogitPrompt,
-			PromptWidth: gogitPromptWidth,
+			Prompt:      prompt,
+			PromptWidth: promptWidth,
 			Line:        lineEditor.Line(),
 			Cursor:      lineEditor.Cursor(),
 			Suggestions: suggestions,
@@ -237,7 +241,13 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 
 		case event := <-outputEvents:
 			if len(event.data) > 0 {
-				visible, readyCount := markerScan.Push(event.data)
+				visible, prompts := markerScan.Push(event.data)
+
+				if len(prompts) > 0 {
+					prompt, promptWidth = formatPrompt(
+						prompts[len(prompts)-1],
+					)
+				}
 
 				if len(visible) > 0 && editing {
 					if err := writeOutput(renderer.Clear()); err != nil {
@@ -251,7 +261,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 					}
 				}
 
-				if readyCount > 0 {
+				if len(prompts) > 0 {
 					editing = true
 					lineEditor.Clear()
 					commandHistory.Reset()
@@ -259,7 +269,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 					selected = -1
 				}
 
-				if editing && (len(visible) > 0 || readyCount > 0) {
+				if editing && (len(visible) > 0 || len(prompts) > 0) {
 					if err := render(); err != nil {
 						return false, err
 					}
@@ -298,6 +308,34 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 			return true, nil
 		}
 	}
+}
+
+func formatPrompt(state protocol.Prompt) (string, int) {
+	var output strings.Builder
+
+	output.WriteString(colorCyan)
+	output.WriteString("(Gogit)")
+	output.WriteString(colorReset)
+	output.WriteByte(' ')
+
+	width := len([]rune("(Gogit) "))
+
+	if state.Environment != "" {
+		output.WriteString(colorYellow)
+		output.WriteByte('(')
+		output.WriteString(state.Environment)
+		output.WriteByte(')')
+		output.WriteString(colorReset)
+		output.WriteByte(' ')
+
+		width += len([]rune(state.Environment)) + 3
+	}
+
+	output.WriteString(state.Directory)
+	output.WriteString("> ")
+	width += len([]rune(state.Directory)) + 2
+
+	return output.String(), width
 }
 
 func navigateUp(lineEditor *editor.Editor, commandHistory *history.History, suggestions []suggest.Suggestion, selected *int, suggestionMode *bool) bool {
