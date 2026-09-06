@@ -58,8 +58,11 @@ func (r *Renderer) Clear() string {
 // Render returns the ANSI sequence for the next complete frame.
 func (r *Renderer) Render(view View) string {
 	selected := view.Selected
-	if selected < 0 || selected >= len(view.Suggestions) {
-		selected = 0
+	hasSelection := selected >= 0 && selected < len(view.Suggestions)
+
+	descriptionIndex := selected
+	if !hasSelection && len(view.Suggestions) > 0 {
+		descriptionIndex = 0
 	}
 
 	currentRows := 0
@@ -77,7 +80,7 @@ func (r *Renderer) Render(view View) string {
 	for index := range rowsToClear {
 		output.WriteString("\r\n\x1b[2K")
 		if index == len(view.Suggestions) && len(view.Suggestions) > 0 {
-			description := view.Suggestions[selected].Description
+			description := view.Suggestions[descriptionIndex].Description
 			output.WriteString("    ")
 			output.WriteString(colorGray)
 			output.WriteString(description)
@@ -89,7 +92,7 @@ func (r *Renderer) Render(view View) string {
 		}
 
 		candidate := view.Suggestions[index]
-		if index == selected {
+		if hasSelection && index == selected {
 			output.WriteString(colorGreen)
 			output.WriteString("  > ")
 		} else {

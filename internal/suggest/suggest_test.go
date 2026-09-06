@@ -33,6 +33,10 @@ func TestSuggest(t *testing.T) {
 		{name: "branch option", line: "git branch --sh", want: []string{"--show-current"}},
 		{name: "all branch options", line: "git branch --", want: []string{"--show-current", "--merged", "--no-merged", "--delete"}},
 		{name: "unknown option", line: "git branch --unknown", want: nil},
+		{name: "completed subcommand", line: "git status", want: nil},
+		{name: "completed option", line: "git status --short", want: nil},
+		{name: "exclude used option", line: "git status --short ", want: []string{"--branch", "--porcelain"}},
+		{name: "exclude used option with prefix", line: "git status --short --", want: []string{"--branch", "--porcelain"}},
 	}
 
 	for _, test := range tests {

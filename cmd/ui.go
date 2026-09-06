@@ -39,7 +39,8 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 		commandHistory history.History
 		renderer       terminal.Renderer
 		markerScan     = protocol.NewScanner(marker)
-		selected       int
+		selected       = -1
+		suggestionMode bool
 		editing        bool
 	)
 
@@ -49,8 +50,15 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 			lineEditor.Cursor(),
 		)
 
-		if selected < 0 || selected >= len(suggestions) {
-			selected = 0
+		if len(suggestions) == 0 {
+			suggestionMode = false
+			selected = -1
+		} else if suggestionMode {
+			if selected < 0 || selected >= len(suggestions) {
+				selected = 0
+			}
+		} else {
+			selected = -1
 		}
 
 		return writeOutput(renderer.Render(terminal.View{
@@ -94,47 +102,47 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 				switch key.Type {
 				case terminal.KeyRune:
 					lineEditor.Insert(key.Rune)
-					selected = 0
+					suggestionMode = false
+					selected = -1
 					changed = true
-
 				case terminal.KeyBackspace:
 					changed = lineEditor.Backspace() || changed
-					selected = 0
-
+					suggestionMode = false
+					selected = -1
 				case terminal.KeyDelete:
 					changed = lineEditor.Delete() || changed
-					selected = 0
-
+					suggestionMode = false
+					selected = -1
 				case terminal.KeyLeft:
 					changed = lineEditor.MoveLeft() || changed
-					selected = 0
-
+					suggestionMode = false
+					selected = -1
 				case terminal.KeyRight:
 					changed = lineEditor.MoveRight() || changed
-					selected = 0
-
+					suggestionMode = false
+					selected = -1
 				case terminal.KeyHome:
 					changed = lineEditor.MoveHome() || changed
-					selected = 0
-
+					suggestionMode = false
+					selected = -1
 				case terminal.KeyEnd:
 					changed = lineEditor.MoveEnd() || changed
-					selected = 0
-
+					suggestionMode = false
+					selected = -1
 				case terminal.KeyUp:
 					suggestions := suggest.Suggest(
 						lineEditor.Line(),
 						lineEditor.Cursor(),
 					)
 
-					changed = navigateUp(&lineEditor, &commandHistory, suggestions, &selected) || changed
+					changed = navigateUp(&lineEditor, &commandHistory, suggestions, &selected, &suggestionMode) || changed
 				case terminal.KeyDown:
 					suggestions := suggest.Suggest(
 						lineEditor.Line(),
 						lineEditor.Cursor(),
 					)
 
-					changed = navigateDown(&lineEditor, &commandHistory, suggestions, &selected) || changed
+					changed = navigateDown(&lineEditor, &commandHistory, suggestions, &selected, &suggestionMode) || changed
 				case terminal.KeyTab:
 					suggestions := suggest.Suggest(
 						lineEditor.Line(),
@@ -143,7 +151,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 					if len(suggestions) == 0 {
 						continue
 					}
-					if selected >= len(suggestions) {
+					if selected < 0 || selected >= len(suggestions) {
 						selected = 0
 					}
 
@@ -160,7 +168,9 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 						context.TokenEnd,
 						suggestions[selected].Value,
 					)
-					selected = 0
+
+					suggestionMode = false
+					selected = -1
 					changed = true
 
 				case terminal.KeyCtrlC:
@@ -172,7 +182,9 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 					}
 
 					lineEditor.Clear()
-					selected = 0
+					commandHistory.Reset()
+					suggestionMode = false
+					selected = -1
 					changed = true
 
 				case terminal.KeyCtrlD:
@@ -185,6 +197,8 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 
 					changed = lineEditor.Delete() || changed
 
+					suggestionMode = false
+					selected = -1
 				case terminal.KeyEnter:
 					if err := writeOutput(renderer.Clear()); err != nil {
 						return false, err
@@ -207,7 +221,8 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 
 					lineEditor.Clear()
 					commandHistory.Reset()
-					selected = 0
+					suggestionMode = false
+					selected = -1
 					editing = false
 					changed = false
 					break keyLoop
@@ -239,7 +254,9 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 				if readyCount > 0 {
 					editing = true
 					lineEditor.Clear()
-					selected = 0
+					commandHistory.Reset()
+					suggestionMode = false
+					selected = -1
 				}
 
 				if editing && (len(visible) > 0 || readyCount > 0) {
@@ -283,8 +300,8 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 	}
 }
 
-func navigateUp(lineEditor *editor.Editor, commandHistory *history.History, suggestions []suggest.Suggestion, selected *int) bool {
-	if len(suggestions) > 0 {
+func navigateUp(lineEditor *editor.Editor, commandHistory *history.History, suggestions []suggest.Suggestion, selected *int, suggestionMode *bool) bool {
+	if *suggestionMode && len(suggestions) > 0 {
 		*selected--
 		if *selected < 0 {
 			*selected = len(suggestions) - 1
@@ -292,18 +309,22 @@ func navigateUp(lineEditor *editor.Editor, commandHistory *history.History, sugg
 		return true
 	}
 
+	// Up never starts suggestion navigation. Outside suggestion mode it
+	// behaves like a regular shell and navigates to older history.
+	*suggestionMode = false
+	*selected = -1
+
 	command, ok := commandHistory.Previous(lineEditor.Line())
 	if !ok {
 		return false
 	}
 
 	lineEditor.SetLine(command)
-	*selected = 0
 	return true
 }
 
-func navigateDown(lineEditor *editor.Editor, commandHistory *history.History, suggestions []suggest.Suggestion, selected *int) bool {
-	if len(suggestions) > 0 {
+func navigateDown(lineEditor *editor.Editor, commandHistory *history.History, suggestions []suggest.Suggestion, selected *int, suggestionMode *bool) bool {
+	if *suggestionMode && len(suggestions) > 0 {
 		*selected++
 		if *selected >= len(suggestions) {
 			*selected = 0
@@ -311,14 +332,28 @@ func navigateDown(lineEditor *editor.Editor, commandHistory *history.History, su
 		return true
 	}
 
-	command, ok := commandHistory.Next()
-	if !ok {
-		return false
+	// Once history browsing has started, Down must continue toward newer
+	// history and eventually restore the user's original draft.
+	if commandHistory.Browsing() {
+		command, ok := commandHistory.Next()
+		if !ok {
+			return false
+		}
+
+		lineEditor.SetLine(command)
+		*suggestionMode = false
+		*selected = -1
+		return true
 	}
 
-	lineEditor.SetLine(command)
-	*selected = 0
-	return true
+	// Down explicitly enters suggestion navigation.
+	if len(suggestions) > 0 {
+		*suggestionMode = true
+		*selected = 0
+		return true
+	}
+
+	return false
 }
 
 func readStream(reader io.Reader) <-chan streamEvent {

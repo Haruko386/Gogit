@@ -69,3 +69,8 @@ func (h *History) Next() (string, bool) {
 	h.Reset()
 	return draft, true
 }
+
+// Browsing reports whether history navigation is currently active.
+func (h *History) Browsing() bool {
+	return h.browsing
+}
