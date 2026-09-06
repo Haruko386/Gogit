@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 
 	"github.com/Haruko386/Gogit/internal/protocol"
 )
@@ -63,6 +64,15 @@ func systemShell(marker string) *exec.Cmd {
 	}
 
 	command := exec.Command(shell, arguments...)
+	// The shell runs on xpty's slave terminal. Give it its own session and
+	// controlling terminal so an interactive shell cannot apply job-control
+	// signals (notably SIGTTOU) to Gogit itself. This matters when Gogit is
+	// launched from another PTY owner such as VHS, tmux, or an SSH recorder.
+	command.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:  true,
+		Setctty: true,
+		Ctty:    0,
+	}
 	command.Env = append(
 		os.Environ(),
 		"PS1="+prompt,
