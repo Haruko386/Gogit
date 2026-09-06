@@ -1,10 +1,10 @@
 # Gogit README demo
 # Before recording: git switch main && go build -o gogit .
-# Then run from the Gogit repository root with: vhs demo.tape
+# Then run from the Gogit repository root with: vhs external/demo.tape
 
 Require git
 
-Output demo.gif
+Output external/gif/demo.gif
 
 Set Shell "bash"
 Set Width 1000
