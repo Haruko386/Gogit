@@ -112,7 +112,9 @@ At least not for a beginner
 
 **Gogit** is a Git CLI assistant written in Go.
 
-It does not try to replace Git.
+<div align=center>
+    <img width="80%" src="./external/gif/demo.gif">
+</div>
 
 It simply tries to help when you're staring at this:
 
