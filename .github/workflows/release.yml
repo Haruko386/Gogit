@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+            executable: gogit.exe
+            archive: zip
+          - runner: macos-latest
+            goos: darwin
+            goarch: arm64
+            executable: gogit
+            archive: tar.gz
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            executable: gogit
+            archive: tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist/package
+          go build \
+            -trimpath \
+            -ldflags="-s -w" \
+            -o "dist/package/${{ matrix.executable }}" \
+            .
+
+      - name: Package Windows build
+        if: matrix.goos == 'windows'
+        shell: pwsh
+        run: |
+          $packageName = "gogit-${env:GITHUB_REF_NAME}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          Compress-Archive `
+            -Path "dist/package/${{ matrix.executable }}" `
+            -DestinationPath "dist/${packageName}.zip"
+
+      - name: Package Unix build
+        if: matrix.goos != 'windows'
+        shell: bash
+        run: |
+          package_name="gogit-${GITHUB_REF_NAME}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          tar -C dist/package -czf "dist/${package_name}.tar.gz" "${{ matrix.executable }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gogit-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/gogit-*.${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gogit-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum gogit-* > checksums.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/gogit-* \
+            dist/checksums.txt \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag
