@@ -163,3 +163,58 @@ func TestSuggestsCommonOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestAnalyzeCommitMessageValueHint(t *testing.T) {
+	tests := []string{
+		"git commit --message",
+		"git commit --message ",
+		`git commit --message "fix bug`,
+		`git commit --message "fix bug"`,
+		`git commit --message=fix`,
+		`git commit -m "fix"`,
+	}
+
+	for _, line := range tests {
+		t.Run(line, func(t *testing.T) {
+			result := Analyze(line, len([]rune(line)))
+			if result.Hint == nil {
+				t.Fatalf("Analyze(%q) returned no value hint", line)
+			}
+			if got, want := result.Hint.Name, "message"; got != want {
+				t.Fatalf("hint name = %q, want %q", got, want)
+			}
+			if len(result.Suggestions) != 0 {
+				t.Fatalf("value position returned suggestions: %#v", result.Suggestions)
+			}
+		})
+	}
+}
+
+func TestAnalyzeContinuesAfterCommitMessage(t *testing.T) {
+	tests := []string{
+		`git commit --message "fix bug" `,
+		`git commit --message="fix bug" `,
+		`git commit --message "" `,
+	}
+
+	for _, line := range tests {
+		t.Run(line, func(t *testing.T) {
+			result := Analyze(line, len([]rune(line)))
+			if result.Hint != nil {
+				t.Fatalf("Analyze(%q) returned unexpected hint: %#v", line, result.Hint)
+			}
+			if len(result.Suggestions) == 0 {
+				t.Fatalf("Analyze(%q) returned no remaining options", line)
+			}
+			foundRepeatableMessage := false
+			for _, candidate := range result.Suggestions {
+				if candidate.Value == "--message" {
+					foundRepeatableMessage = true
+				}
+			}
+			if !foundRepeatableMessage {
+				t.Fatal("repeatable --message was not suggested")
+			}
+		})
+	}
+}

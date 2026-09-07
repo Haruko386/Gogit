@@ -49,10 +49,11 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 	)
 
 	render := func() error {
-		suggestions := suggest.Suggest(
+		result := suggest.Analyze(
 			lineEditor.Line(),
 			lineEditor.Cursor(),
 		)
+		suggestions := result.Suggestions
 
 		if len(suggestions) == 0 {
 			suggestionMode = false
@@ -72,6 +73,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 			Cursor:      lineEditor.Cursor(),
 			Suggestions: suggestions,
 			Selected:    selected,
+			Hint:        result.Hint,
 		}))
 	}
 
@@ -181,7 +183,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 					if err := writeOutput(renderer.Clear()); err != nil {
 						return false, err
 					}
-					if err := writeOutput("^C\r\n"); err != nil {
+					if err := writeOutput(prompt + "^C\r\n"); err != nil {
 						return false, err
 					}
 
@@ -205,6 +207,9 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 					selected = -1
 				case terminal.KeyEnter:
 					if err := writeOutput(renderer.Clear()); err != nil {
+						return false, err
+					}
+					if err := writeOutput(prompt); err != nil {
 						return false, err
 					}
 

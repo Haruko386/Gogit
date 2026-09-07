@@ -26,6 +26,7 @@ type View struct {
 	Cursor      int
 	Suggestions []suggest.Suggestion
 	Selected    int
+	Hint        *suggest.ValueHint
 }
 
 // Renderer redraws one input line and its suggestion area.
@@ -68,6 +69,8 @@ func (r *Renderer) Render(view View) string {
 	currentRows := 0
 	if len(view.Suggestions) > 0 {
 		currentRows = len(view.Suggestions) + 1
+	} else if view.Hint != nil {
+		currentRows = 1
 	}
 	rowsToClear := max(currentRows, r.previousSuggestionRows)
 
@@ -79,6 +82,16 @@ func (r *Renderer) Render(view View) string {
 
 	for index := range rowsToClear {
 		output.WriteString("\r\n\x1b[2K")
+		if len(view.Suggestions) == 0 && view.Hint != nil && index == 0 {
+			output.WriteString("    ")
+			output.WriteString(colorGray)
+			output.WriteByte('<')
+			output.WriteString(view.Hint.Name)
+			output.WriteString(">  ")
+			output.WriteString(view.Hint.Description)
+			output.WriteString(colorReset)
+			continue
+		}
 		if index == len(view.Suggestions) && len(view.Suggestions) > 0 {
 			description := view.Suggestions[descriptionIndex].Description
 			output.WriteString("    ")

@@ -137,9 +137,14 @@ var gitOptions = map[string][]Suggestion{
 	},
 	"commit": {
 		{
-			Value:       "--message",
-			Description: "Use the supplied text as the commit message.",
-			Kind:        KindOption,
+			Value:            "--message",
+			Description:      "Use the supplied text as the commit message; repeat it to add paragraphs.",
+			Kind:             KindOption,
+			TakesValue:       true,
+			ValueName:        "message",
+			ValueDescription: "Enter the commit message. Quotes are recommended.",
+			Repeatable:       true,
+			Aliases:          []string{"-m"},
 		},
 		{
 			Value:       "--amend",

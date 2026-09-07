@@ -75,3 +75,25 @@ func TestRendererClearRemovesSuggestionRows(t *testing.T) {
 		)
 	}
 }
+
+func TestRendererDrawsValueHint(t *testing.T) {
+	var renderer Renderer
+
+	output := renderer.Render(View{
+		Prompt:      "(Gogit) ",
+		PromptWidth: 8,
+		Line:        "git commit --message ",
+		Cursor:      len([]rune("git commit --message ")),
+		Hint: &suggest.ValueHint{
+			Name:        "message",
+			Description: "Enter the commit message.",
+		},
+	})
+
+	if !strings.Contains(output, "<message>") {
+		t.Fatalf("Render() did not draw the value name: %q", output)
+	}
+	if !strings.Contains(output, "Enter the commit message.") {
+		t.Fatalf("Render() did not draw the value description: %q", output)
+	}
+}
