@@ -46,6 +46,10 @@ func Analyze(line string, cursor int) Result {
 // matching filters candidates to those starting with prefix, skipping the
 // candidate whose value already equals prefix and any value present in excluded.
 func matching(candidates []Suggestion, prefix string, excluded map[string]struct{}) []Suggestion {
+	if prefix == "" {
+		return nil
+	}
+
 	matched := make([]Suggestion, 0, len(candidates))
 
 	for _, candidate := range candidates {

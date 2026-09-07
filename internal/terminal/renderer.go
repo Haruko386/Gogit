@@ -3,18 +3,20 @@ package terminal
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/Haruko386/Gogit/internal/suggest"
 )
 
 const (
-	hideCursor = "\x1b[?25l"
-	showCursor = "\x1b[?25h"
-	clearLine  = "\r\x1b[2K"
-	colorCyan  = "\x1b[36m"
-	colorGreen = "\x1b[32m"
-	colorGray  = "\x1b[90m"
-	colorReset = "\x1b[0m"
+	hideCursor  = "\x1b[?25l"
+	showCursor  = "\x1b[?25h"
+	clearLine   = "\r\x1b[2K"
+	colorCyan   = "\x1b[36m"
+	colorGreen  = "\x1b[32m"
+	colorYellow = "\x1b[33m"
+	colorGray   = "\x1b[90m"
+	colorReset  = "\x1b[0m"
 )
 
 // View contains everything needed to draw one editor frame. PromptWidth is
@@ -78,7 +80,7 @@ func (r *Renderer) Render(view View) string {
 	output.WriteString(hideCursor)
 	output.WriteString(clearLine)
 	output.WriteString(view.Prompt)
-	output.WriteString(view.Line)
+	output.WriteString(highlightInput(view.Line))
 
 	for index := range rowsToClear {
 		output.WriteString("\r\n\x1b[2K")
@@ -129,5 +131,63 @@ func (r *Renderer) Render(view View) string {
 	output.WriteString(showCursor)
 
 	r.previousSuggestionRows = currentRows
+	return output.String()
+}
+
+// highlightInput adds display-only syntax colors without changing the text or
+// its rune indexes. The editor and cursor calculations continue to use the
+// original, unstyled line.
+func highlightInput(line string) string {
+	runes := []rune(line)
+	commandStart := 0
+	for commandStart < len(runes) && unicode.IsSpace(runes[commandStart]) {
+		commandStart++
+	}
+
+	commandEnd := commandStart
+	for commandEnd < len(runes) && !unicode.IsSpace(runes[commandEnd]) {
+		commandEnd++
+	}
+	highlightGit := string(runes[commandStart:commandEnd]) == "git"
+
+	var output strings.Builder
+	for index := 0; index < len(runes); {
+		if highlightGit && index == commandStart {
+			output.WriteString(colorCyan)
+			output.WriteString("git")
+			output.WriteString(colorReset)
+			index = commandEnd
+			continue
+		}
+
+		if runes[index] == '\'' || runes[index] == '"' {
+			quote := runes[index]
+			output.WriteString(colorYellow)
+			output.WriteRune(quote)
+			index++
+
+			for index < len(runes) {
+				value := runes[index]
+				output.WriteRune(value)
+				index++
+
+				if (value == '\\' || value == '`') && index < len(runes) {
+					output.WriteRune(runes[index])
+					index++
+					continue
+				}
+				if value == quote {
+					break
+				}
+			}
+
+			output.WriteString(colorReset)
+			continue
+		}
+
+		output.WriteRune(runes[index])
+		index++
+	}
+
 	return output.String()
 }

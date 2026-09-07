@@ -19,7 +19,7 @@ func TestRendererDrawsSuggestionAndDescription(t *testing.T) {
 		},
 	})
 
-	for _, expected := range []string{"git branch --sh", "--show-current", "Print the current branch."} {
+	for _, expected := range []string{" branch --sh", "--show-current", "Print the current branch."} {
 		if !strings.Contains(frame, expected) {
 			t.Fatalf("rendered frame does not contain %q: %q", expected, frame)
 		}
@@ -95,5 +95,43 @@ func TestRendererDrawsValueHint(t *testing.T) {
 	}
 	if !strings.Contains(output, "Enter the commit message.") {
 		t.Fatalf("Render() did not draw the value description: %q", output)
+	}
+}
+
+func TestRendererHighlightsGitAndQuotedValue(t *testing.T) {
+	var renderer Renderer
+
+	output := renderer.Render(View{
+		Prompt:      "> ",
+		PromptWidth: 2,
+		Line:        `git commit -m "message:xx"`,
+		Cursor:      len([]rune(`git commit -m "message:xx"`)),
+	})
+
+	if !strings.Contains(output, colorCyan+"git"+colorReset) {
+		t.Fatalf("Render() did not highlight git: %q", output)
+	}
+	if !strings.Contains(output, colorYellow+`"message:xx"`+colorReset) {
+		t.Fatalf("Render() did not highlight quoted value: %q", output)
+	}
+}
+
+func TestHighlightInputRequiresCompleteGitToken(t *testing.T) {
+	for _, line := range []string{"g", "gitty status", `"git" status`} {
+		if output := highlightInput(line); strings.Contains(output, colorCyan) {
+			t.Fatalf("highlightInput(%q) highlighted a non-git token: %q", line, output)
+		}
+	}
+}
+
+func TestHighlightInputHandlesLeadingSpaceAndUnclosedQuote(t *testing.T) {
+	line := `  git commit -m "unfinished`
+	output := highlightInput(line)
+
+	if !strings.Contains(output, `  `+colorCyan+"git"+colorReset) {
+		t.Fatalf("leading-space git token was not highlighted: %q", output)
+	}
+	if !strings.Contains(output, colorYellow+`"unfinished`+colorReset) {
+		t.Fatalf("unclosed quoted value was not highlighted: %q", output)
 	}
 }

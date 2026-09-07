@@ -29,13 +29,15 @@ func TestSuggest(t *testing.T) {
 		want []string
 	}{
 		{name: "ordinary command", line: "go test ", want: nil},
+		{name: "empty git subcommand", line: "git ", want: nil},
 		{name: "git subcommand", line: "git br", want: []string{"branch"}},
+		{name: "empty branch option", line: "git branch ", want: nil},
 		{name: "branch option", line: "git branch --sh", want: []string{"--show-current"}},
 		{name: "all branch options", line: "git branch --", want: []string{"--show-current", "--merged", "--no-merged", "--delete"}},
 		{name: "unknown option", line: "git branch --unknown", want: nil},
 		{name: "completed subcommand", line: "git status", want: nil},
 		{name: "completed option", line: "git status --short", want: nil},
-		{name: "exclude used option", line: "git status --short ", want: []string{"--branch", "--porcelain"}},
+		{name: "empty option after used option", line: "git status --short ", want: nil},
 		{name: "exclude used option with prefix", line: "git status --short --", want: []string{"--branch", "--porcelain"}},
 	}
 
@@ -190,7 +192,7 @@ func TestAnalyzeCommitMessageValueHint(t *testing.T) {
 	}
 }
 
-func TestAnalyzeContinuesAfterCommitMessage(t *testing.T) {
+func TestAnalyzeHidesOptionsAfterCommitMessageAtEmptyToken(t *testing.T) {
 	tests := []string{
 		`git commit --message "fix bug" `,
 		`git commit --message="fix bug" `,
@@ -203,9 +205,27 @@ func TestAnalyzeContinuesAfterCommitMessage(t *testing.T) {
 			if result.Hint != nil {
 				t.Fatalf("Analyze(%q) returned unexpected hint: %#v", line, result.Hint)
 			}
-			if len(result.Suggestions) == 0 {
-				t.Fatalf("Analyze(%q) returned no remaining options", line)
+			if len(result.Suggestions) != 0 {
+				t.Fatalf("Analyze(%q) returned suggestions for an empty token: %#v", line, result.Suggestions)
 			}
+		})
+	}
+}
+
+func TestAnalyzeSuggestsRepeatableMessageAfterPrefix(t *testing.T) {
+	tests := []string{
+		`git commit --message "fix bug" --m`,
+		`git commit --message="fix bug" --m`,
+		`git commit --message "" --m`,
+	}
+
+	for _, line := range tests {
+		t.Run(line, func(t *testing.T) {
+			result := Analyze(line, len([]rune(line)))
+			if result.Hint != nil {
+				t.Fatalf("Analyze(%q) returned unexpected hint: %#v", line, result.Hint)
+			}
+
 			foundRepeatableMessage := false
 			for _, candidate := range result.Suggestions {
 				if candidate.Value == "--message" {
