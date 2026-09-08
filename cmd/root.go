@@ -39,7 +39,13 @@ func runPersistentShell() (resultErr error) {
 		return err
 	}
 
-	shellSession := session.New(systemShell(marker), width, height)
+	shellCommand, cleanupShell, err := systemShell(marker)
+	if err != nil {
+		return err
+	}
+	defer cleanupShell()
+
+	shellSession := session.New(shellCommand, width, height)
 
 	if err := shellSession.Start(); err != nil {
 		return fmt.Errorf("start shell: %w", err)

@@ -10,7 +10,7 @@ import (
 	"github.com/Haruko386/Gogit/internal/protocol"
 )
 
-func systemShell(marker string) *exec.Cmd {
+func systemShell(marker string) (*exec.Cmd, func(), error) {
 	begin := protocol.BeginMarker(marker)
 	end := protocol.EndMarker(marker)
 
@@ -66,5 +66,5 @@ function global:prompt {
 		"VIRTUAL_ENV_DISABLE_PROMPT=1",
 	)
 
-	return command
+	return command, func() {}, nil
 }

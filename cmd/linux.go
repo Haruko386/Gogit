@@ -3,64 +3,70 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
-
-	"github.com/Haruko386/Gogit/internal/protocol"
 )
 
-func systemShell(marker string) *exec.Cmd {
+func systemShell(marker string) (*exec.Cmd, func(), error) {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
 	}
 
-	begin := protocol.BeginMarker(marker)
-	end := protocol.EndMarker(marker)
-	separator := string(rune(0x1f))
+	temporaryDirectory, err := os.MkdirTemp("", "gogit-shell-")
+	if err != nil {
+		return nil, nil, fmt.Errorf("create shell configuration: %w", err)
+	}
+	cleanup := func() {
+		_ = os.RemoveAll(temporaryDirectory)
+	}
 
-	var (
-		arguments []string
-		prompt    string
-	)
+	var arguments []string
+	environment := append([]string(nil), os.Environ()...)
 
 	switch filepath.Base(shell) {
 	case "bash":
-		arguments = []string{"--norc", "-i"}
-		prompt = begin +
-			`$(if [ -n "$CONDA_DEFAULT_ENV" ]; then ` +
-			`printf "%s" "$CONDA_DEFAULT_ENV"; ` +
-			`elif [ -n "$VIRTUAL_ENV" ]; then ` +
-			`basename "$VIRTUAL_ENV"; fi)` +
-			separator +
-			`\w` +
-			end
+		initFile := filepath.Join(temporaryDirectory, "bashrc")
+		if err := os.WriteFile(initFile, []byte(bashInitScript(marker)), 0o600); err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("write Bash configuration: %w", err)
+		}
+		arguments = []string{"--rcfile", initFile, "-i"}
 
 	case "zsh":
-		arguments = []string{
-			"-f",
-			"-o",
-			"PROMPT_SUBST",
-			"-i",
+		initFile := filepath.Join(temporaryDirectory, ".zshrc")
+		if err := os.WriteFile(initFile, []byte(zshInitScript(marker)), 0o600); err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("write Zsh configuration: %w", err)
 		}
-		prompt = begin +
-			`${CONDA_DEFAULT_ENV:-${VIRTUAL_ENV:t}}` +
-			separator +
-			`%~` +
-			end
+
+		userZDOTDIR := os.Getenv("ZDOTDIR")
+		if userZDOTDIR == "" {
+			userZDOTDIR = os.Getenv("HOME")
+		}
+		environment = append(
+			environment,
+			"GOGIT_USER_ZDOTDIR="+userZDOTDIR,
+			"ZDOTDIR="+temporaryDirectory,
+		)
+		arguments = []string{"-i"}
 
 	default:
+		initFile := filepath.Join(temporaryDirectory, "profile")
+		if err := os.WriteFile(initFile, []byte(posixInitScript(marker)), 0o600); err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("write POSIX shell configuration: %w", err)
+		}
+
+		environment = append(
+			environment,
+			"GOGIT_USER_ENV="+os.Getenv("ENV"),
+			"ENV="+initFile,
+		)
 		arguments = []string{"-i"}
-		prompt = begin +
-			`$(if [ -n "$CONDA_DEFAULT_ENV" ]; then ` +
-			`printf "%s" "$CONDA_DEFAULT_ENV"; ` +
-			`elif [ -n "$VIRTUAL_ENV" ]; then ` +
-			`basename "$VIRTUAL_ENV"; fi)` +
-			separator +
-			`$(pwd)` +
-			end
 	}
 
 	command := exec.Command(shell, arguments...)
@@ -74,12 +80,10 @@ func systemShell(marker string) *exec.Cmd {
 		Ctty:    0,
 	}
 	command.Env = append(
-		os.Environ(),
-		"PS1="+prompt,
-		"PROMPT="+prompt,
+		environment,
 		"CONDA_CHANGEPS1=false",
 		"VIRTUAL_ENV_DISABLE_PROMPT=1",
 	)
 
-	return command
+	return command, cleanup, nil
 }
