@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -34,6 +35,37 @@ type branchLoadResult struct {
 	branches   []suggest.Suggestion
 }
 
+var (
+	bracketedPasteStart = []byte("\x1b[200~")
+	bracketedPasteEnd   = []byte("\x1b[201~")
+)
+
+// bracketedPasteState keeps enough trailing input to recognize paste markers
+// even when the terminal splits an escape sequence across multiple reads.
+type bracketedPasteState struct {
+	active bool
+	tail   []byte
+}
+
+func (s *bracketedPasteState) observe(data []byte) {
+	markerSize := max(len(bracketedPasteStart), len(bracketedPasteEnd))
+
+	for _, value := range data {
+		s.tail = append(s.tail, value)
+
+		switch {
+		case bytes.HasSuffix(s.tail, bracketedPasteStart):
+			s.active = true
+			s.tail = nil
+		case bytes.HasSuffix(s.tail, bracketedPasteEnd):
+			s.active = false
+			s.tail = nil
+		case len(s.tail) >= markerSize:
+			s.tail = append(s.tail[:0], s.tail[len(s.tail)-markerSize+1:]...)
+		}
+	}
+}
+
 func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-chan error) (resizeFinished bool, resultErr error) {
 	inputEvents := readStream(os.Stdin)
 	outputEvents := readStream(shellSession)
@@ -59,6 +91,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 		branchCancel     context.CancelFunc
 		branchGeneration uint64
 		pendingKeys      []terminal.Key
+		pasteState       bracketedPasteState
 	)
 	defer func() {
 		if branchCancel != nil {
@@ -129,8 +162,8 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 	// handleEditingKeys consumes one batch of decoded input. If the batch
 	// submits a command, the caller keeps every key after Enter in pendingKeys
 	// and replays it when the shell emits its next prompt. Input arriving in a
-	// later terminal read while the command runs is still passed through to the
-	// PTY, which preserves interactive programs such as editors and REPLs.
+	// later terminal read while the command runs is passed through to the PTY
+	// unless it belongs to the same bracketed paste.
 	handleEditingKeys := func(keys []terminal.Key) (
 		changed bool,
 		consumed int,
@@ -261,6 +294,21 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 		return changed, consumed, nil
 	}
 
+	replayPendingKeys := func() (bool, error) {
+		if len(pendingKeys) == 0 || pasteState.active || !editing {
+			return false, nil
+		}
+
+		keys := pendingKeys
+		pendingKeys = nil
+
+		changed, consumed, err := handleEditingKeys(keys)
+		if consumed < len(keys) {
+			pendingKeys = append(pendingKeys, keys[consumed:]...)
+		}
+		return changed, err
+	}
+
 	for {
 		select {
 		case event := <-inputEvents:
@@ -274,12 +322,31 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 				)
 			}
 
-			if !editing {
+			wasPasting := pasteState.active
+			pasteState.observe(event.data)
+
+			if !editing && !wasPasting {
 				if err := writeAll(shellSession, event.data); err != nil {
 					return false, fmt.Errorf(
 						"write PTY input: %w",
 						err,
 					)
+				}
+				continue
+			}
+			if wasPasting {
+				pendingKeys = append(pendingKeys, decoder.Feed(event.data)...)
+				changed, err := replayPendingKeys()
+				if errors.Is(err, io.EOF) {
+					return false, nil
+				}
+				if err != nil {
+					return false, err
+				}
+				if editing && changed {
+					if err := render(); err != nil {
+						return false, err
+					}
 				}
 				continue
 			}
@@ -332,19 +399,13 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 					suggestionMode = false
 					selected = -1
 
-					if len(pendingKeys) > 0 {
-						keys := pendingKeys
-						pendingKeys = nil
-
-						_, consumed, err := handleEditingKeys(keys)
+					if len(pendingKeys) > 0 && !pasteState.active {
+						_, err := replayPendingKeys()
 						if errors.Is(err, io.EOF) {
 							return false, nil
 						}
 						if err != nil {
 							return false, err
-						}
-						if consumed < len(keys) {
-							pendingKeys = append(pendingKeys, keys[consumed:]...)
 						}
 					}
 				}

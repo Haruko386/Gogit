@@ -3,6 +3,7 @@ package cmd
 import (
 	"io"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,14 +32,37 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stdinReader.Close()
-	defer stdinWriter.Close()
+	t.Cleanup(func() {
+		if err := stdinReader.Close(); err != nil {
+			t.Errorf("close stdin reader: %v", err)
+		}
+	})
+
+	var (
+		closeStdinWriterOnce sync.Once
+		closeStdinWriterErr  error
+	)
+	closeStdinWriter := func() error {
+		closeStdinWriterOnce.Do(func() {
+			closeStdinWriterErr = stdinWriter.Close()
+		})
+		return closeStdinWriterErr
+	}
+	t.Cleanup(func() {
+		if err := closeStdinWriter(); err != nil {
+			t.Errorf("close stdin writer: %v", err)
+		}
+	})
 
 	stdout, err := os.CreateTemp(t.TempDir(), "gogit-output-*.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stdout.Close()
+	t.Cleanup(func() {
+		if err := stdout.Close(); err != nil {
+			t.Errorf("close stdout capture: %v", err)
+		}
+	})
 
 	oldStdin := os.Stdin
 	oldStdout := os.Stdout
@@ -58,8 +82,12 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 	}
 	defer func() {
 		close(shellDone)
-		shellOutput.Close()
-		shellWriter.Close()
+		if err := shellOutput.Close(); err != nil {
+			t.Errorf("close shell output reader: %v", err)
+		}
+		if err := shellWriter.Close(); err != nil {
+			t.Errorf("close shell output writer: %v", err)
+		}
 	}()
 
 	marker := "multiline-test"
@@ -73,16 +101,29 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 	writePromptFrame(t, shellWriter, marker)
 	waitForOutput(t, stdout)
 
-	paste := "\x1b[200~git status\r\ngo test ./...\r\n\x1b[201~"
-	if _, err := stdinWriter.Write([]byte(paste)); err != nil {
+	if _, err := stdinWriter.Write([]byte("\x1b[200~git status\r\n")); err != nil {
 		t.Fatal(err)
 	}
 
 	assertShellWrite(t, shell.writes, "git status\r")
 	writePromptFrame(t, shellWriter, marker)
+
+	if _, err := stdinWriter.Write([]byte("go test ./...\r\n\x1b[20")); err != nil {
+		t.Fatal(err)
+	}
+	assertNoShellWrite(t, shell.writes)
+
+	if _, err := stdinWriter.Write([]byte("1~")); err != nil {
+		t.Fatal(err)
+	}
 	assertShellWrite(t, shell.writes, "go test ./...\r")
 
-	if err := stdinWriter.Close(); err != nil {
+	if _, err := stdinWriter.Write([]byte("interactive input")); err != nil {
+		t.Fatal(err)
+	}
+	assertShellWrite(t, shell.writes, "interactive input")
+
+	if err := closeStdinWriter(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -143,5 +184,14 @@ func assertShellWrite(t *testing.T, writes <-chan []byte, want string) {
 		}
 	case <-time.After(time.Second):
 		t.Fatalf("shell did not receive %q", want)
+	}
+}
+
+func assertNoShellWrite(t *testing.T, writes <-chan []byte) {
+	t.Helper()
+	select {
+	case got := <-writes:
+		t.Fatalf("unexpected shell write: %q", got)
+	case <-time.After(25 * time.Millisecond):
 	}
 }
