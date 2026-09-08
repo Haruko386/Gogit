@@ -15,6 +15,7 @@ import (
 	"github.com/Haruko386/Gogit/internal/session"
 	"github.com/Haruko386/Gogit/internal/suggest"
 	"github.com/Haruko386/Gogit/internal/terminal"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -57,6 +58,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 		branches         []suggest.Suggestion
 		branchCancel     context.CancelFunc
 		branchGeneration uint64
+		pendingKeys      []terminal.Key
 	)
 	defer func() {
 		if branchCancel != nil {
@@ -124,6 +126,141 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 		}))
 	}
 
+	// handleEditingKeys consumes one batch of decoded input. If the batch
+	// submits a command, the caller keeps every key after Enter in pendingKeys
+	// and replays it when the shell emits its next prompt. Input arriving in a
+	// later terminal read while the command runs is still passed through to the
+	// PTY, which preserves interactive programs such as editors and REPLs.
+	handleEditingKeys := func(keys []terminal.Key) (
+		changed bool,
+		consumed int,
+		err error,
+	) {
+		for index, key := range keys {
+			consumed = index + 1
+
+			switch key.Type {
+			case terminal.KeyRune:
+				lineEditor.Insert(key.Rune)
+				suggestionMode = false
+				selected = -1
+				changed = true
+			case terminal.KeyBackspace:
+				changed = lineEditor.Backspace() || changed
+				suggestionMode = false
+				selected = -1
+			case terminal.KeyDelete:
+				changed = lineEditor.Delete() || changed
+				suggestionMode = false
+				selected = -1
+			case terminal.KeyLeft:
+				changed = lineEditor.MoveLeft() || changed
+				suggestionMode = false
+				selected = -1
+			case terminal.KeyRight:
+				changed = lineEditor.MoveRight() || changed
+				suggestionMode = false
+				selected = -1
+			case terminal.KeyHome:
+				changed = lineEditor.MoveHome() || changed
+				suggestionMode = false
+				selected = -1
+			case terminal.KeyEnd:
+				changed = lineEditor.MoveEnd() || changed
+				suggestionMode = false
+				selected = -1
+			case terminal.KeyUp:
+				suggestions := analyze().Suggestions
+
+				changed = navigateUp(&lineEditor, &commandHistory, suggestions, &selected, &suggestionMode) || changed
+			case terminal.KeyDown:
+				suggestions := analyze().Suggestions
+
+				changed = navigateDown(&lineEditor, &commandHistory, suggestions, &selected, &suggestionMode) || changed
+			case terminal.KeyTab:
+				suggestions := analyze().Suggestions
+				if len(suggestions) == 0 {
+					continue
+				}
+				if selected < 0 || selected >= len(suggestions) {
+					selected = 0
+				}
+
+				context, ok := suggest.ParseContext(
+					lineEditor.Line(),
+					lineEditor.Cursor(),
+				)
+				if !ok {
+					continue
+				}
+
+				lineEditor.Replace(
+					context.TokenStart,
+					context.TokenEnd,
+					suggestions[selected].Value,
+				)
+
+				suggestionMode = false
+				selected = -1
+				changed = true
+
+			case terminal.KeyCtrlC:
+				if err := writeOutput(renderer.Clear()); err != nil {
+					return changed, consumed, err
+				}
+				if err := writeOutput(prompt + "^C\r\n"); err != nil {
+					return changed, consumed, err
+				}
+
+				lineEditor.Clear()
+				commandHistory.Reset()
+				suggestionMode = false
+				selected = -1
+				changed = true
+
+			case terminal.KeyCtrlD:
+				if lineEditor.Line() == "" {
+					if err := writeOutput(renderer.Clear()); err != nil {
+						return changed, consumed, err
+					}
+					return changed, consumed, io.EOF
+				}
+
+				changed = lineEditor.Delete() || changed
+				suggestionMode = false
+				selected = -1
+
+			case terminal.KeyEnter:
+				if err := writeOutput(renderer.Clear()); err != nil {
+					return changed, consumed, err
+				}
+				if err := writeOutput(prompt); err != nil {
+					return changed, consumed, err
+				}
+
+				command := lineEditor.Line()
+				commandHistory.Add(command)
+				command += "\r"
+
+				if err := writeAll(shellSession, []byte(command)); err != nil {
+					return changed, consumed, fmt.Errorf(
+						"submit command: %w",
+						err,
+					)
+				}
+
+				lineEditor.Clear()
+				commandHistory.Reset()
+				suggestionMode = false
+				selected = -1
+				editing = false
+				return false, consumed, nil
+			}
+		}
+
+		return changed, consumed, nil
+	}
+
 	for {
 		select {
 		case event := <-inputEvents:
@@ -148,132 +285,15 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 			}
 
 			keys := decoder.Feed(event.data)
-			changed := false
-
-		keyLoop:
-			for _, key := range keys {
-				switch key.Type {
-				case terminal.KeyRune:
-					lineEditor.Insert(key.Rune)
-					suggestionMode = false
-					selected = -1
-					changed = true
-				case terminal.KeyBackspace:
-					changed = lineEditor.Backspace() || changed
-					suggestionMode = false
-					selected = -1
-				case terminal.KeyDelete:
-					changed = lineEditor.Delete() || changed
-					suggestionMode = false
-					selected = -1
-				case terminal.KeyLeft:
-					changed = lineEditor.MoveLeft() || changed
-					suggestionMode = false
-					selected = -1
-				case terminal.KeyRight:
-					changed = lineEditor.MoveRight() || changed
-					suggestionMode = false
-					selected = -1
-				case terminal.KeyHome:
-					changed = lineEditor.MoveHome() || changed
-					suggestionMode = false
-					selected = -1
-				case terminal.KeyEnd:
-					changed = lineEditor.MoveEnd() || changed
-					suggestionMode = false
-					selected = -1
-				case terminal.KeyUp:
-					suggestions := analyze().Suggestions
-
-					changed = navigateUp(&lineEditor, &commandHistory, suggestions, &selected, &suggestionMode) || changed
-				case terminal.KeyDown:
-					suggestions := analyze().Suggestions
-
-					changed = navigateDown(&lineEditor, &commandHistory, suggestions, &selected, &suggestionMode) || changed
-				case terminal.KeyTab:
-					suggestions := analyze().Suggestions
-					if len(suggestions) == 0 {
-						continue
-					}
-					if selected < 0 || selected >= len(suggestions) {
-						selected = 0
-					}
-
-					context, ok := suggest.ParseContext(
-						lineEditor.Line(),
-						lineEditor.Cursor(),
-					)
-					if !ok {
-						continue
-					}
-
-					lineEditor.Replace(
-						context.TokenStart,
-						context.TokenEnd,
-						suggestions[selected].Value,
-					)
-
-					suggestionMode = false
-					selected = -1
-					changed = true
-
-				case terminal.KeyCtrlC:
-					if err := writeOutput(renderer.Clear()); err != nil {
-						return false, err
-					}
-					if err := writeOutput(prompt + "^C\r\n"); err != nil {
-						return false, err
-					}
-
-					lineEditor.Clear()
-					commandHistory.Reset()
-					suggestionMode = false
-					selected = -1
-					changed = true
-
-				case terminal.KeyCtrlD:
-					if lineEditor.Line() == "" {
-						if err := writeOutput(renderer.Clear()); err != nil {
-							return false, err
-						}
-						return false, nil
-					}
-
-					changed = lineEditor.Delete() || changed
-
-					suggestionMode = false
-					selected = -1
-				case terminal.KeyEnter:
-					if err := writeOutput(renderer.Clear()); err != nil {
-						return false, err
-					}
-					if err := writeOutput(prompt); err != nil {
-						return false, err
-					}
-
-					command := lineEditor.Line()
-					// save command to history
-					commandHistory.Add(command)
-					command += "\r"
-
-					if err := writeAll(
-						shellSession,
-						[]byte(command),
-					); err != nil {
-						return false, fmt.Errorf(
-							"submit command: %w",
-							err,
-						)
-					}
-
-					lineEditor.Clear()
-					commandHistory.Reset()
-					suggestionMode = false
-					selected = -1
-					editing = false
-					changed = false
-					break keyLoop
-				}
+			changed, consumed, err := handleEditingKeys(keys)
+			if errors.Is(err, io.EOF) {
+				return false, nil
+			}
+			if err != nil {
+				return false, err
+			}
+			if consumed < len(keys) {
+				pendingKeys = append(pendingKeys, keys[consumed:]...)
 			}
 
 			if editing && changed {
@@ -311,6 +331,22 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 					commandHistory.Reset()
 					suggestionMode = false
 					selected = -1
+
+					if len(pendingKeys) > 0 {
+						keys := pendingKeys
+						pendingKeys = nil
+
+						_, consumed, err := handleEditingKeys(keys)
+						if errors.Is(err, io.EOF) {
+							return false, nil
+						}
+						if err != nil {
+							return false, err
+						}
+						if consumed < len(keys) {
+							pendingKeys = append(pendingKeys, keys[consumed:]...)
+						}
+					}
 				}
 
 				if editing && (len(visible) > 0 || len(prompts) > 0) {
@@ -373,8 +409,6 @@ func formatPrompt(state protocol.Prompt) (string, int) {
 	output.WriteString(colorReset)
 	output.WriteByte(' ')
 
-	width := len([]rune("(Gogit) "))
-
 	if state.Environment != "" {
 		output.WriteString(colorYellow)
 		output.WriteByte('(')
@@ -382,15 +416,13 @@ func formatPrompt(state protocol.Prompt) (string, int) {
 		output.WriteByte(')')
 		output.WriteString(colorReset)
 		output.WriteByte(' ')
-
-		width += len([]rune(state.Environment)) + 3
 	}
 
 	output.WriteString(state.Directory)
 	output.WriteString("> ")
-	width += len([]rune(state.Directory)) + 2
 
-	return output.String(), width
+	prompt := output.String()
+	return prompt, ansi.StringWidth(prompt)
 }
 
 func navigateUp(lineEditor *editor.Editor, commandHistory *history.History, suggestions []suggest.Suggestion, selected *int, suggestionMode *bool) bool {

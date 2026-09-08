@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -133,5 +134,36 @@ func TestHighlightInputHandlesLeadingSpaceAndUnclosedQuote(t *testing.T) {
 	}
 	if !strings.Contains(output, colorYellow+`"unfinished`+colorReset) {
 		t.Fatalf("unclosed quoted value was not highlighted: %q", output)
+	}
+}
+
+func TestRendererPositionsCursorByTerminalCellWidth(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want int
+	}{
+		{name: "ASCII", line: "abc", want: 5},
+		{name: "Chinese", line: "a中", want: 5},
+		{name: "combining character", line: "e\u0301", want: 3},
+		{name: "emoji", line: "🚀", want: 4},
+		{name: "emoji sequence", line: "👨‍👩‍👧‍👦", want: 4},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var renderer Renderer
+			output := renderer.Render(View{
+				Prompt:      "> ",
+				PromptWidth: 2,
+				Line:        test.line,
+				Cursor:      len([]rune(test.line)),
+			})
+
+			want := fmt.Sprintf("\r\x1b[%dC%s", test.want, showCursor)
+			if !strings.Contains(output, want) {
+				t.Fatalf("cursor sequence not found in %q; want %q", output, want)
+			}
+		})
 	}
 }

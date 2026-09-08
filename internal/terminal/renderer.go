@@ -6,6 +6,7 @@ import (
 	"unicode"
 
 	"github.com/Haruko386/Gogit/internal/suggest"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -123,8 +124,11 @@ func (r *Renderer) Render(view View) string {
 	}
 	output.WriteByte('\r')
 
-	cursor := min(max(view.Cursor, 0), len([]rune(view.Line)))
-	cursorColumn := view.PromptWidth + cursor
+	lineRunes := []rune(view.Line)
+	cursor := min(max(view.Cursor, 0), len(lineRunes))
+	cursorColumn := view.PromptWidth + ansi.StringWidth(
+		string(lineRunes[:cursor]),
+	)
 	if cursorColumn > 0 {
 		fmt.Fprintf(&output, "\x1b[%dC", cursorColumn)
 	}
