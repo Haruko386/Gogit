@@ -238,3 +238,69 @@ func TestAnalyzeSuggestsRepeatableMessageAfterPrefix(t *testing.T) {
 		})
 	}
 }
+
+func TestAnalyzeSuggestsRepositoryBranches(t *testing.T) {
+	branches := []Suggestion{
+		{Value: "dev", Kind: KindBranch},
+		{Value: "feature/login", Kind: KindBranch},
+		{Value: "main", Kind: KindBranch},
+		{Value: "origin/dev", Kind: KindBranch},
+		{Value: "origin/main", Kind: KindBranch},
+	}
+
+	tests := []struct {
+		line string
+		want []string
+	}{
+		{line: "git switch fe", want: []string{"feature/login"}},
+		{line: "git checkout de", want: []string{"dev"}},
+		{line: "git merge ma", want: []string{"main"}},
+		{line: "git rebase or", want: []string{"origin/dev", "origin/main"}},
+		{line: "git reset --hard or", want: []string{"origin/dev", "origin/main"}},
+		{line: "git pull origin ma", want: []string{"main"}},
+		{line: "git push origin fe", want: []string{"feature/login"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := AnalyzeWithBranches(
+				test.line,
+				len([]rune(test.line)),
+				branches,
+			)
+
+			if len(result.Suggestions) != len(test.want) {
+				t.Fatalf(
+					"AnalyzeWithBranches(%q) returned %d candidates, want %d: %#v",
+					test.line,
+					len(result.Suggestions),
+					len(test.want),
+					result.Suggestions,
+				)
+			}
+			for index, want := range test.want {
+				if result.Suggestions[index].Value != want {
+					t.Fatalf(
+						"candidate %d = %q, want %q",
+						index,
+						result.Suggestions[index].Value,
+						want,
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestAnalyzeDoesNotSuggestExistingBranchAsNewBranchName(t *testing.T) {
+	branches := []Suggestion{{Value: "feature/login", Kind: KindBranch}}
+	for _, line := range []string{
+		"git switch --create fe",
+		"git checkout -b fe",
+	} {
+		result := AnalyzeWithBranches(line, len([]rune(line)), branches)
+		if len(result.Suggestions) != 0 {
+			t.Fatalf("AnalyzeWithBranches(%q) = %#v, want no branches", line, result.Suggestions)
+		}
+	}
+}

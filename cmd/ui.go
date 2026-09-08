@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Haruko386/Gogit/internal/editor"
 	"github.com/Haruko386/Gogit/internal/history"
@@ -26,33 +28,78 @@ type streamEvent struct {
 	err  error
 }
 
+type branchLoadResult struct {
+	generation uint64
+	branches   []suggest.Suggestion
+}
+
 func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-chan error) (resizeFinished bool, resultErr error) {
 	inputEvents := readStream(os.Stdin)
 	outputEvents := readStream(shellSession)
 	shellDone := make(chan error, 1)
+	branchResults := make(chan branchLoadResult, 1)
 
 	go func() {
 		shellDone <- shellSession.Wait()
 	}()
 
 	var (
-		decoder        terminal.Decoder
-		lineEditor     editor.Editor
-		commandHistory history.History
-		renderer       terminal.Renderer
-		markerScan     = protocol.NewScanner(marker)
-		selected       = -1
-		suggestionMode bool
-		editing        bool
-		prompt         = colorCyan + "(Gogit)" + colorReset + " "
-		promptWidth    = 8
+		decoder          terminal.Decoder
+		lineEditor       editor.Editor
+		commandHistory   history.History
+		renderer         terminal.Renderer
+		markerScan       = protocol.NewScanner(marker)
+		selected         = -1
+		suggestionMode   bool
+		editing          bool
+		prompt           = colorCyan + "(Gogit)" + colorReset + " "
+		promptWidth      = 8
+		branches         []suggest.Suggestion
+		branchCancel     context.CancelFunc
+		branchGeneration uint64
 	)
+	defer func() {
+		if branchCancel != nil {
+			branchCancel()
+		}
+	}()
 
-	render := func() error {
-		result := suggest.Analyze(
+	loadBranches := func(directory string) {
+		if branchCancel != nil {
+			branchCancel()
+		}
+
+		branchGeneration++
+		generation := branchGeneration
+		branches = nil
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		branchCancel = cancel
+
+		go func() {
+			defer cancel()
+
+			loaded, _ := suggest.LoadBranches(ctx, directory)
+			select {
+			case branchResults <- branchLoadResult{
+				generation: generation,
+				branches:   loaded,
+			}:
+			case <-ctx.Done():
+			}
+		}()
+	}
+
+	analyze := func() suggest.Result {
+		return suggest.AnalyzeWithBranches(
 			lineEditor.Line(),
 			lineEditor.Cursor(),
+			branches,
 		)
+	}
+
+	render := func() error {
+		result := analyze()
 		suggestions := result.Suggestions
 
 		if len(suggestions) == 0 {
@@ -136,24 +183,15 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 					suggestionMode = false
 					selected = -1
 				case terminal.KeyUp:
-					suggestions := suggest.Suggest(
-						lineEditor.Line(),
-						lineEditor.Cursor(),
-					)
+					suggestions := analyze().Suggestions
 
 					changed = navigateUp(&lineEditor, &commandHistory, suggestions, &selected, &suggestionMode) || changed
 				case terminal.KeyDown:
-					suggestions := suggest.Suggest(
-						lineEditor.Line(),
-						lineEditor.Cursor(),
-					)
+					suggestions := analyze().Suggestions
 
 					changed = navigateDown(&lineEditor, &commandHistory, suggestions, &selected, &suggestionMode) || changed
 				case terminal.KeyTab:
-					suggestions := suggest.Suggest(
-						lineEditor.Line(),
-						lineEditor.Cursor(),
-					)
+					suggestions := analyze().Suggestions
 					if len(suggestions) == 0 {
 						continue
 					}
@@ -252,6 +290,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 					prompt, promptWidth = formatPrompt(
 						prompts[len(prompts)-1],
 					)
+					loadBranches(prompts[len(prompts)-1].Directory)
 				}
 
 				if len(visible) > 0 && editing {
@@ -302,6 +341,17 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 
 		case err := <-shellDone:
 			return false, err
+
+		case result := <-branchResults:
+			if result.generation != branchGeneration {
+				continue
+			}
+			branches = result.branches
+			if editing && lineEditor.Line() != "" {
+				if err := render(); err != nil {
+					return false, err
+				}
+			}
 
 		case err := <-resizeDone:
 			if err != nil {

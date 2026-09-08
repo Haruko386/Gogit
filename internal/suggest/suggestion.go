@@ -6,6 +6,7 @@ type Kind string
 const (
 	KindSubcommand Kind = "subcommand"
 	KindOption     Kind = "option"
+	KindBranch     Kind = "branch"
 )
 
 // Suggestion is one value Gogit can insert into the current token.

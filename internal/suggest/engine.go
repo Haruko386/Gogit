@@ -13,6 +13,16 @@ func Suggest(line string, cursor int) []Suggestion {
 // Analyze returns insertable completions and, when applicable, a display-only
 // explanation of the value expected by the preceding option.
 func Analyze(line string, cursor int) Result {
+	return AnalyzeWithBranches(line, cursor, nil)
+}
+
+// AnalyzeWithBranches adds repository branch refs to commands that accept a
+// branch or revision while keeping Analyze deterministic for existing callers.
+func AnalyzeWithBranches(
+	line string,
+	cursor int,
+	branches []Suggestion,
+) Result {
 	context, ok := ParseContext(line, cursor)
 	if !ok ||
 		len(context.WordsBefore) == 0 ||
@@ -23,6 +33,12 @@ func Analyze(line string, cursor int) Result {
 	if len(context.WordsBefore) == 1 {
 		return Result{Suggestions: matching(
 			gitSubcommands, context.Prefix, nil,
+		)}
+	}
+
+	if acceptsBranch(context) {
+		return Result{Suggestions: matching(
+			branches, context.Prefix, nil,
 		)}
 	}
 
@@ -41,6 +57,45 @@ func Analyze(line string, cursor int) Result {
 	return Result{Suggestions: matching(
 		options, context.Prefix, used,
 	)}
+}
+
+func acceptsBranch(context Context) bool {
+	if context.Prefix == "" || strings.HasPrefix(context.Prefix, "-") {
+		return false
+	}
+
+	command := context.WordsBefore[1]
+	switch command {
+	case "switch":
+		return !containsAny(
+			context.WordsBefore[2:],
+			"--create", "-c", "--orphan",
+		)
+	case "checkout":
+		return !containsAny(
+			context.WordsBefore[2:],
+			"-b", "-B", "--orphan",
+		)
+	case "merge", "rebase", "reset", "log", "diff":
+		return true
+	case "pull", "push":
+		// The first positional argument is the remote; following arguments are
+		// refs or refspecs.
+		return len(context.WordsBefore) >= 3
+	default:
+		return false
+	}
+}
+
+func containsAny(words []string, values ...string) bool {
+	for _, word := range words {
+		for _, value := range values {
+			if word == value {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // matching filters candidates to those starting with prefix, skipping the
