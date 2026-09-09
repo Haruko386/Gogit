@@ -24,7 +24,7 @@ func TestShellInitScriptsLoadUserConfigBeforeInstallingPrompt(t *testing.T) {
 		{
 			name:       "Zsh",
 			script:     zshInitScript(marker),
-			userConfig: `source "$GOGIT_USER_ZDOTDIR/.zshrc"`,
+			userConfig: `source "$GOGIT_USER_ZDOTDIR_AFTER_ZSHENV/.zshrc"`,
 			promptName: "PROMPT=",
 		},
 		{
@@ -54,6 +54,43 @@ func TestShellInitScriptsLoadUserConfigBeforeInstallingPrompt(t *testing.T) {
 				t.Fatalf("prompt protocol markers are missing: %q", test.script)
 			}
 		})
+	}
+}
+
+func TestZshEnvBootstrapPreservesUserChangesBeforeRestoringBootstrapDirectory(t *testing.T) {
+	script := zshEnvInitScript()
+	sourceIndex := strings.Index(
+		script,
+		`source "$__gogit_user_zdotdir/.zshenv"`,
+	)
+	selectionIndex := strings.Index(
+		script,
+		`GOGIT_USER_ZDOTDIR_AFTER_ZSHENV=${ZDOTDIR:-$HOME}`,
+	)
+	restoreIndex := strings.Index(
+		script,
+		`ZDOTDIR=$__gogit_bootstrap_zdotdir`,
+	)
+
+	if sourceIndex < 0 || selectionIndex <= sourceIndex || restoreIndex <= selectionIndex {
+		t.Fatalf("unexpected Zsh environment bootstrap order: %q", script)
+	}
+}
+
+func TestShellInitScriptsAppendFinalPromptHooks(t *testing.T) {
+	bashScript := bashInitScript("bash-hook-test")
+	for _, expected := range []string{
+		"PROMPT_COMMAND+=(__gogit_restore_prompt)",
+		`PROMPT_COMMAND="${PROMPT_COMMAND%;};__gogit_restore_prompt"`,
+	} {
+		if !strings.Contains(bashScript, expected) {
+			t.Fatalf("Bash init script does not contain %q: %q", expected, bashScript)
+		}
+	}
+
+	zshScript := zshInitScript("zsh-hook-test")
+	if expected := "precmd_functions+=(__gogit_restore_prompt)"; !strings.Contains(zshScript, expected) {
+		t.Fatalf("Zsh init script does not contain %q: %q", expected, zshScript)
 	}
 }
 

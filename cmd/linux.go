@@ -37,19 +37,26 @@ func systemShell(marker string) (*exec.Cmd, func(), error) {
 		arguments = []string{"--rcfile", initFile, "-i"}
 
 	case "zsh":
-		initFile := filepath.Join(temporaryDirectory, ".zshrc")
-		if err := os.WriteFile(initFile, []byte(zshInitScript(marker)), 0o600); err != nil {
+		zshEnvFile := filepath.Join(temporaryDirectory, ".zshenv")
+		if err := os.WriteFile(zshEnvFile, []byte(zshEnvInitScript()), 0o600); err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("write Zsh environment bootstrap: %w", err)
+		}
+
+		zshRCFile := filepath.Join(temporaryDirectory, ".zshrc")
+		if err := os.WriteFile(zshRCFile, []byte(zshInitScript(marker)), 0o600); err != nil {
 			cleanup()
 			return nil, nil, fmt.Errorf("write Zsh configuration: %w", err)
 		}
 
-		userZDOTDIR := os.Getenv("ZDOTDIR")
-		if userZDOTDIR == "" {
+		userZDOTDIR, zdotdirWasSet := os.LookupEnv("ZDOTDIR")
+		if !zdotdirWasSet {
 			userZDOTDIR = os.Getenv("HOME")
 		}
 		environment = append(
 			environment,
 			"GOGIT_USER_ZDOTDIR="+userZDOTDIR,
+			fmt.Sprintf("GOGIT_USER_ZDOTDIR_WAS_SET=%t", zdotdirWasSet),
 			"ZDOTDIR="+temporaryDirectory,
 		)
 		arguments = []string{"-i"}
