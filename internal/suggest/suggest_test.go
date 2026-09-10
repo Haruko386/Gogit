@@ -73,6 +73,10 @@ func TestSuggestsCommonSubcommands(t *testing.T) {
 		{line: "git com", want: "commit"},
 		{line: "git swi", want: "switch"},
 		{line: "git reb", want: "rebase"},
+		{line: "git clo", want: "clone"},
+		{line: "git ini", want: "init"},
+		{line: "git rem", want: "remote"},
+		{line: "git ta", want: "tag"},
 	}
 
 	for _, test := range tests {
@@ -136,6 +140,22 @@ func TestSuggestsCommonOptions(t *testing.T) {
 		{
 			line: "git log --gra",
 			want: "--graph",
+		},
+		{
+			line: "git clone --dep",
+			want: "--depth",
+		},
+		{
+			line: "git init --initial",
+			want: "--initial-branch",
+		},
+		{
+			line: "git remote --ver",
+			want: "--verbose",
+		},
+		{
+			line: "git tag --ann",
+			want: "--annotate",
 		},
 	}
 
@@ -302,5 +322,70 @@ func TestAnalyzeDoesNotSuggestExistingBranchAsNewBranchName(t *testing.T) {
 		if len(result.Suggestions) != 0 {
 			t.Fatalf("AnalyzeWithBranches(%q) = %#v, want no branches", line, result.Suggestions)
 		}
+	}
+}
+
+func TestAnalyzeNewOptionValueHints(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{
+			line: "git clone --branch ",
+			want: "branch",
+		},
+		{
+			line: "git clone --depth ",
+			want: "depth",
+		},
+		{
+			line: "git clone -o ",
+			want: "name",
+		},
+		{
+			line: "git init -b ",
+			want: "branch",
+		},
+		{
+			line: "git init --template ",
+			want: "directory",
+		},
+		{
+			line: "git tag -m ",
+			want: "message",
+		},
+		{
+			line: "git tag --contains ",
+			want: "commit",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := Analyze(
+				test.line,
+				len([]rune(test.line)),
+			)
+
+			if result.Hint == nil {
+				t.Fatalf(
+					"Analyze(%q) returned no value hint",
+					test.line,
+				)
+			}
+			if result.Hint.Name != test.want {
+				t.Fatalf(
+					"hint name = %q, want %q",
+					result.Hint.Name,
+					test.want,
+				)
+			}
+			if len(result.Suggestions) != 0 {
+				t.Fatalf(
+					"value position returned suggestions: %#v",
+					result.Suggestions,
+				)
+			}
+		})
 	}
 }
