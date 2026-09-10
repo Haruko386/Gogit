@@ -159,28 +159,6 @@ func TestFormatPromptUsesTerminalCellWidth(t *testing.T) {
 	}
 }
 
-func TestIsCompleteTypeAhead(t *testing.T) {
-	tests := []struct {
-		name string
-		data []byte
-		want bool
-	}{
-		{name: "complete command", data: []byte("git status\r"), want: true},
-		{name: "incomplete command", data: []byte("git status"), want: false},
-		{name: "bare enter", data: []byte("\r"), want: false},
-		{name: "interrupt", data: []byte{'\x03'}, want: false},
-		{name: "escape sequence", data: []byte("\x1b[A"), want: false},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := isCompleteTypeAhead(test.data); got != test.want {
-				t.Fatalf("isCompleteTypeAhead(%q) = %t, want %t", test.data, got, test.want)
-			}
-		})
-	}
-}
-
 func writePromptFrame(t *testing.T, writer io.Writer, marker string) {
 	t.Helper()
 	frame := protocol.BeginMarker(marker) +

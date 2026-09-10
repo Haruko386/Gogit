@@ -9,8 +9,6 @@ import (
 	"os"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/Haruko386/Gogit/internal/editor"
 	"github.com/Haruko386/Gogit/internal/history"
@@ -333,11 +331,6 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 			wasPasting := pasteState.active
 			pasteState.observe(event.data)
 
-			if !editing && !wasPasting && isCompleteTypeAhead(event.data) {
-				pendingKeys = append(pendingKeys, decoder.Feed(event.data)...)
-				continue
-			}
-
 			if !editing && !wasPasting {
 				if err := writeAll(shellSession, event.data); err != nil {
 					return false, fmt.Errorf(
@@ -473,33 +466,6 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 			return true, nil
 		}
 	}
-}
-
-// isCompleteTypeAhead identifies a complete, ordinary command entered while
-// the previous command is still finishing. Control and escape input belongs to
-// an interactive foreground program and must continue directly to the PTY.
-func isCompleteTypeAhead(data []byte) bool {
-	if !utf8.Valid(data) {
-		return false
-	}
-
-	complete := false
-	hasText := false
-	for _, value := range string(data) {
-		switch value {
-		case '\r', '\n':
-			complete = true
-		case '\t', '\b', '\x7f':
-		default:
-			if unicode.IsControl(value) {
-				return false
-			}
-			if !unicode.IsSpace(value) {
-				hasText = true
-			}
-		}
-	}
-	return complete && hasText
 }
 
 func formatPrompt(state protocol.Prompt) (string, int) {
