@@ -134,11 +134,15 @@ func (s *Scanner) Push(data []byte) (
 		if s.inside {
 			if len(s.frame)+len(stable) > maxPromptFrameSize {
 				// A corrupt frame must not consume unbounded memory or hide all
-				// subsequent shell output forever. Discard it and scan afresh.
+				// subsequent shell output forever. Discard through the first
+				// overflowing byte, then rescan everything that follows.
+				remainingCapacity := maxPromptFrameSize - len(s.frame)
+				discard := min(len(buffer), remainingCapacity+1)
+				buffer = buffer[discard:]
 				s.frame = nil
 				s.inside = false
 				s.pending = nil
-				break
+				continue
 			}
 			s.frame = append(s.frame, stable...)
 		} else {

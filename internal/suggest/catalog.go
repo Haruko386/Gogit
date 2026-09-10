@@ -98,6 +98,61 @@ var gitSubcommands = []Suggestion{
 	},
 }
 
+var gitNestedSubcommands = map[string][]Suggestion{
+	"remote": {
+		{
+			Value:       "add",
+			Description: "Add a new remote repository.",
+			Kind:        KindSubcommand,
+		},
+		{
+			Value:       "rename",
+			Description: "Rename an existing remote.",
+			Kind:        KindSubcommand,
+		},
+		{
+			Value:       "remove",
+			Description: "Remove an existing remote.",
+			Kind:        KindSubcommand,
+		},
+		{
+			Value:       "set-head",
+			Description: "Set or delete the default branch for a remote.",
+			Kind:        KindSubcommand,
+		},
+		{
+			Value:       "set-branches",
+			Description: "Change the branches tracked for a remote.",
+			Kind:        KindSubcommand,
+		},
+		{
+			Value:       "get-url",
+			Description: "Show the URL of a remote.",
+			Kind:        KindSubcommand,
+		},
+		{
+			Value:       "set-url",
+			Description: "Change the URL of a remote.",
+			Kind:        KindSubcommand,
+		},
+		{
+			Value:       "show",
+			Description: "Show information about a remote.",
+			Kind:        KindSubcommand,
+		},
+		{
+			Value:       "prune",
+			Description: "Delete stale remote-tracking references.",
+			Kind:        KindSubcommand,
+		},
+		{
+			Value:       "update",
+			Description: "Fetch updates for one or more remotes.",
+			Kind:        KindSubcommand,
+		},
+	},
+}
+
 var gitOptions = map[string][]Suggestion{
 	"branch": {
 		{
@@ -303,6 +358,139 @@ var gitOptions = map[string][]Suggestion{
 			Description: "Show remote URLs in addition to remote names",
 			Kind:        KindOption,
 			Aliases:     []string{"-v"},
+		},
+	},
+	"remote add": {
+		{
+			Value:       "-f",
+			Description: "Fetch the remote immediately after adding it.",
+			Kind:        KindOption,
+		},
+		{
+			Value:            "-t",
+			Description:      "Track only the specified branch; repeat it to track multiple branches.",
+			Kind:             KindOption,
+			TakesValue:       true,
+			ValueName:        "branch",
+			ValueDescription: "Enter a remote branch to track.",
+			Repeatable:       true,
+		},
+		{
+			Value:            "-m",
+			Description:      "Set the remote's default branch.",
+			Kind:             KindOption,
+			TakesValue:       true,
+			ValueName:        "branch",
+			ValueDescription: "Enter the remote's default branch.",
+		},
+		{
+			Value:         "--tags",
+			Description:   "Import every tag from the remote.",
+			Kind:          KindOption,
+			ConflictsWith: []string{"--no-tags"},
+		},
+		{
+			Value:         "--no-tags",
+			Description:   "Do not import tags from the remote.",
+			Kind:          KindOption,
+			ConflictsWith: []string{"--tags"},
+		},
+		{
+			Value:       "--mirror=",
+			Description: "Create a fetch or push mirror; append fetch or push.",
+			Kind:        KindOption,
+		},
+	},
+	"remote rename": {
+		{
+			Value:         "--progress",
+			Description:   "Show progress while renaming remote references.",
+			Kind:          KindOption,
+			ConflictsWith: []string{"--no-progress"},
+		},
+		{
+			Value:         "--no-progress",
+			Description:   "Do not show progress while renaming remote references.",
+			Kind:          KindOption,
+			ConflictsWith: []string{"--progress"},
+		},
+	},
+	"remote set-head": {
+		{
+			Value:         "--auto",
+			Description:   "Query the remote and set its default branch automatically.",
+			Kind:          KindOption,
+			Aliases:       []string{"-a"},
+			ConflictsWith: []string{"--delete"},
+		},
+		{
+			Value:         "--delete",
+			Description:   "Delete the remote's default-branch reference.",
+			Kind:          KindOption,
+			Aliases:       []string{"-d"},
+			ConflictsWith: []string{"--auto"},
+		},
+	},
+	"remote set-branches": {
+		{
+			Value:       "--add",
+			Description: "Add branches instead of replacing the tracked branch list.",
+			Kind:        KindOption,
+		},
+	},
+	"remote get-url": {
+		{
+			Value:       "--push",
+			Description: "Show push URLs instead of fetch URLs.",
+			Kind:        KindOption,
+		},
+		{
+			Value:       "--all",
+			Description: "Show all URLs for the remote.",
+			Kind:        KindOption,
+		},
+	},
+	"remote set-url": {
+		{
+			Value:       "--push",
+			Description: "Change push URLs instead of fetch URLs.",
+			Kind:        KindOption,
+		},
+		{
+			Value:         "--add",
+			Description:   "Add a new URL instead of replacing an existing URL.",
+			Kind:          KindOption,
+			ConflictsWith: []string{"--delete"},
+		},
+		{
+			Value:         "--delete",
+			Description:   "Delete URLs matching the supplied regular expression.",
+			Kind:          KindOption,
+			ConflictsWith: []string{"--add"},
+		},
+	},
+	"remote show": {
+		{
+			Value:       "--no-query",
+			Description: "Use cached information without querying the remote.",
+			Kind:        KindOption,
+			Aliases:     []string{"-n"},
+		},
+	},
+	"remote prune": {
+		{
+			Value:       "--dry-run",
+			Description: "Report stale references without deleting them.",
+			Kind:        KindOption,
+			Aliases:     []string{"-n"},
+		},
+	},
+	"remote update": {
+		{
+			Value:       "--prune",
+			Description: "Prune stale references while updating remotes.",
+			Kind:        KindOption,
+			Aliases:     []string{"-p"},
 		},
 	},
 	"tag": {

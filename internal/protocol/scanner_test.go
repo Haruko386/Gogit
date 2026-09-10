@@ -143,6 +143,22 @@ func TestScannerDiscardsOversizedFrameWhenEndMarkerIsPresent(t *testing.T) {
 	}
 }
 
+func TestScannerRescansOutputAfterOversizedUnterminatedFrame(t *testing.T) {
+	marker := "__READY__"
+	scanner := NewScanner(marker)
+	data := BeginMarker(marker) +
+		string(make([]byte, maxPromptFrameSize+1)) +
+		"visible output"
+
+	visible, prompts := scanner.Push([]byte(data))
+	if string(visible) != "visible output" {
+		t.Fatalf("visible output = %q", visible)
+	}
+	if len(prompts) != 0 {
+		t.Fatalf("unexpected prompts: %#v", prompts)
+	}
+}
+
 func TestRecoveryNameIsStableAndShellSafe(t *testing.T) {
 	first := RecoveryName("marker with unsafe-$-characters")
 	second := RecoveryName("marker with unsafe-$-characters")

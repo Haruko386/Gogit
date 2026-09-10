@@ -3,12 +3,16 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/base64"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Haruko386/Gogit/internal/protocol"
+	"github.com/Haruko386/Gogit/internal/session"
 )
 
 func TestPowerShellRecoveryRestoresOverwrittenPrompt(t *testing.T) {
@@ -41,15 +45,47 @@ function global:prompt { 'user prompt' }
 }
 
 func TestPowerShellCommandWrapperProtectsRecoveryFromComment(t *testing.T) {
-	marker := "powershell-wrapper-test"
-	_, wrapper, _, err := systemShell(marker)
+	powershell, err := exec.LookPath("pwsh.exe")
 	if err != nil {
-		t.Fatal(err)
+		powershell, err = exec.LookPath("powershell.exe")
+	}
+	if err != nil {
+		t.Skip("PowerShell is not installed")
 	}
 
-	wrapped := wrapper("function global:prompt { 'user prompt' } # replace prompt")
-	if !strings.Contains(wrapped, "\n}; if") {
-		t.Fatalf("recovery is not protected from a trailing comment: %q", wrapped)
+	marker := "powershell-wrapper-test"
+	input := "function global:prompt { 'user prompt' } # replace prompt"
+	encodedInput := base64.StdEncoding.EncodeToString([]byte(input))
+	script := powershellInitScript(marker) + `
+$inputText = [System.Text.Encoding]::UTF8.GetString(
+    [System.Convert]::FromBase64String('` + encodedInput + `')
+)
+$wrapped = & ` + powershellWrapperName(marker) + ` $inputText
+[Console]::WriteLine(
+    [System.Convert]::ToBase64String(
+        [System.Text.Encoding]::UTF8.GetBytes($wrapped)
+    )
+)
+`
+	command := exec.Command(powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run PowerShell wrapper fixture: %v\n%s", err, output)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(output)))
+	if err != nil {
+		t.Fatalf("decode PowerShell wrapper: %v\n%s", err, output)
+	}
+	wrapped := string(decoded)
+
+	if strings.ContainsAny(wrapped, "\r\n") {
+		t.Fatalf(
+			"interactive PowerShell wrapper contains a physical newline: %q",
+			wrapped,
+		)
+	}
+	if strings.Contains(wrapped, input) {
+		t.Fatalf("submitted command was not encoded: %q", wrapped)
 	}
 	if !strings.Contains(wrapped, protocol.RecoveryName(marker)) {
 		t.Fatalf("wrapped command does not invoke session recovery: %q", wrapped)
@@ -75,7 +111,6 @@ func TestPowerShellCommandWrapperPreservesFailureStatus(t *testing.T) {
 			}
 
 			marker := "status-test-" + interpreter.name
-			recoveryName := protocol.RecoveryName(marker)
 			tests := []struct {
 				name       string
 				setup      string
@@ -97,10 +132,14 @@ func TestPowerShellCommandWrapperPreservesFailureStatus(t *testing.T) {
 
 			for _, test := range tests {
 				t.Run(test.name, func(t *testing.T) {
-					wrapped := wrapPowerShellCommand(test.command, recoveryName)
-					script := powershellInitScript(marker) + "\n" + test.setup + "\n" +
-						wrapped + `
-[Console]::WriteLine("status=$?;native=$LASTEXITCODE")
+					encodedInput := base64.StdEncoding.EncodeToString([]byte(test.command))
+					script := powershellInitScript(marker) + "\n" + test.setup + `
+$inputText = [System.Text.Encoding]::UTF8.GetString(
+    [System.Convert]::FromBase64String('` + encodedInput + `')
+)
+$wrapped = & ` + powershellWrapperName(marker) + ` $inputText
+$wrapped += '; [Console]::WriteLine("status=$?;native=$LASTEXITCODE")'
+& ([scriptblock]::Create($wrapped))
 `
 					command := exec.Command(
 						interpreter.path,
@@ -123,6 +162,72 @@ func TestPowerShellCommandWrapperPreservesFailureStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPowerShellInteractiveInputDoesNotEchoProtocolWrapper(t *testing.T) {
+	marker := "interactive-wrapper-test"
+	command, wrapper, cleanup, err := systemShell(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if wrapper != nil {
+		t.Fatal("PowerShell commands must be wrapped after ReadLine, not before PTY input")
+	}
+
+	shell := session.New(command, 120, 40)
+	if err := shell.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := shell.Close(); err != nil {
+			t.Errorf("close PowerShell session: %v", err)
+		}
+	}()
+
+	events := readStream(shell)
+	output := waitForShellOutput(t, events, nil, func(data []byte) bool {
+		return bytes.Count(data, []byte(protocol.EndMarker(marker))) >= 1
+	})
+
+	input := []byte("Write-Output gogit-interactive-ok\r")
+	if err := writeAll(shell, input); err != nil {
+		t.Fatal(err)
+	}
+	output = waitForShellOutput(t, events, output, func(data []byte) bool {
+		return bytes.Count(data, []byte(protocol.EndMarker(marker))) >= 2 &&
+			bytes.Contains(data, []byte("gogit-interactive-ok"))
+	})
+
+	if bytes.Contains(output, []byte("$__gogit_command")) ||
+		bytes.Contains(output, []byte("FromBase64String")) {
+		t.Fatalf("internal PowerShell wrapper was echoed: %q", output)
+	}
+}
+
+func waitForShellOutput(
+	t *testing.T,
+	events <-chan streamEvent,
+	initial []byte,
+	done func([]byte) bool,
+) []byte {
+	t.Helper()
+	output := append([]byte(nil), initial...)
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+
+	for !done(output) {
+		select {
+		case event := <-events:
+			output = append(output, event.data...)
+			if event.err != nil {
+				t.Fatalf("read PowerShell PTY: %v; output: %q", event.err, output)
+			}
+		case <-timer.C:
+			t.Fatalf("timed out waiting for PowerShell output: %q", output)
+		}
+	}
+	return output
 }
 
 func findExecutable(name string) string {

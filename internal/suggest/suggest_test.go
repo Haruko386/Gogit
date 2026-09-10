@@ -389,3 +389,268 @@ func TestAnalyzeNewOptionValueHints(t *testing.T) {
 		})
 	}
 }
+
+func TestSuggestsRemoteSubcommands(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{
+			line: "git remote ad",
+			want: "add",
+		},
+		{
+			line: "git remote ren",
+			want: "rename",
+		},
+		{
+			line: "git remote rem",
+			want: "remove",
+		},
+		{
+			line: "git remote set-h",
+			want: "set-head",
+		},
+		{
+			line: "git remote set-b",
+			want: "set-branches",
+		},
+		{
+			line: "git remote get",
+			want: "get-url",
+		},
+		{
+			line: "git remote set-u",
+			want: "set-url",
+		},
+		{
+			line: "git remote sho",
+			want: "show",
+		},
+		{
+			line: "git remote pru",
+			want: "prune",
+		},
+		{
+			line: "git remote upd",
+			want: "update",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(
+				test.line,
+				len([]rune(test.line)),
+			)
+
+			if len(got) != 1 {
+				t.Fatalf(
+					"Suggest(%q) returned %d candidates: %#v",
+					test.line,
+					len(got),
+					got,
+				)
+			}
+
+			if got[0].Value != test.want {
+				t.Fatalf(
+					"Suggest(%q) = %q, want %q",
+					test.line,
+					got[0].Value,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestRemoteSubcommandsDoNotReplaceRemoteOptions(t *testing.T) {
+	got := Suggest(
+		"git remote --ver",
+		len([]rune("git remote --ver")),
+	)
+
+	if len(got) != 1 || got[0].Value != "--verbose" {
+		t.Fatalf(
+			"Suggest() = %#v, want --verbose",
+			got,
+		)
+	}
+}
+
+func TestSuggestsRemoteSubcommandOptions(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{
+			line: "git remote add --mir",
+			want: "--mirror=",
+		},
+		{
+			line: "git remote rename --pro",
+			want: "--progress",
+		},
+		{
+			line: "git remote set-head --au",
+			want: "--auto",
+		},
+		{
+			line: "git remote set-branches --ad",
+			want: "--add",
+		},
+		{
+			line: "git remote get-url --pu",
+			want: "--push",
+		},
+		{
+			line: "git remote set-url --del",
+			want: "--delete",
+		},
+		{
+			line: "git remote show --no",
+			want: "--no-query",
+		},
+		{
+			line: "git remote prune --dry",
+			want: "--dry-run",
+		},
+		{
+			line: "git remote update --pru",
+			want: "--prune",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(
+				test.line,
+				len([]rune(test.line)),
+			)
+
+			if len(got) != 1 {
+				t.Fatalf(
+					"Suggest(%q) returned %d candidates: %#v",
+					test.line,
+					len(got),
+					got,
+				)
+			}
+
+			if got[0].Value != test.want {
+				t.Fatalf(
+					"Suggest(%q) = %q, want %q",
+					test.line,
+					got[0].Value,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestAnalyzeRemoteSubcommandOptionValueHints(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{
+			line: "git remote add -t ",
+			want: "branch",
+		},
+		{
+			line: "git remote add -m ",
+			want: "branch",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := Analyze(
+				test.line,
+				len([]rune(test.line)),
+			)
+
+			if result.Hint == nil {
+				t.Fatalf(
+					"Analyze(%q) returned no value hint",
+					test.line,
+				)
+			}
+
+			if result.Hint.Name != test.want {
+				t.Fatalf(
+					"hint name = %q, want %q",
+					result.Hint.Name,
+					test.want,
+				)
+			}
+
+			if len(result.Suggestions) != 0 {
+				t.Fatalf(
+					"value position returned suggestions: %#v",
+					result.Suggestions,
+				)
+			}
+		})
+	}
+}
+
+func TestRemoteOptionsBeforeSubcommandArePreserved(t *testing.T) {
+	got := Suggest(
+		"git remote --verbose sho",
+		len([]rune("git remote --verbose sho")),
+	)
+
+	if len(got) != 1 || got[0].Value != "show" {
+		t.Fatalf(
+			"Suggest() = %#v, want show",
+			got,
+		)
+	}
+}
+
+func TestRemoteSubcommandOptionConflicts(t *testing.T) {
+	tests := []string{
+		"git remote add --tags --no",
+		"git remote set-head -a --del",
+		"git remote set-url --add --del",
+		"git remote rename --progress --no",
+	}
+
+	for _, line := range tests {
+		t.Run(line, func(t *testing.T) {
+			got := Suggest(line, len([]rune(line)))
+			if len(got) != 0 {
+				t.Fatalf(
+					"Suggest(%q) = %#v, want no conflicting option",
+					line,
+					got,
+				)
+			}
+		})
+	}
+}
+
+func TestRemoteAddTrackOptionIsRepeatable(t *testing.T) {
+	got := Suggest(
+		"git remote add -t main -",
+		len([]rune("git remote add -t main -")),
+	)
+
+	found := false
+	for _, candidate := range got {
+		if candidate.Value == "-t" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatalf(
+			"repeatable -t was not suggested: %#v",
+			got,
+		)
+	}
+}

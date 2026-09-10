@@ -19,6 +19,7 @@ type Suggestion struct {
 	ValueDescription string
 	Repeatable       bool
 	Aliases          []string
+	ConflictsWith    []string
 }
 
 // ValueHint explains the value expected after an option. It is display-only

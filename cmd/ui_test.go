@@ -121,30 +121,18 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 	}
 	assertShellWrite(t, shell.writes, "wrapped(go test ./...)\r")
 
-	// A complete command arriving in a later read while the previous command
-	// runs must wait for the prompt so it cannot bypass protocol recovery.
-	if _, err := stdinWriter.Write([]byte("function prompt { 'custom' }\r")); err != nil {
+	// Once editing is false, a complete line may belong to an interactive
+	// foreground process and must pass through immediately, including Enter.
+	if _, err := stdinWriter.Write([]byte("interactive input\r")); err != nil {
 		t.Fatal(err)
 	}
-	assertNoShellWrite(t, shell.writes)
-
-	writePromptFrame(t, shellWriter, marker)
-	assertShellWrite(
-		t,
-		shell.writes,
-		"wrapped(function prompt { 'custom' })\r",
-	)
+	assertShellWrite(t, shell.writes, "interactive input\r")
 
 	// Interactive control input still belongs to the running PTY.
 	if _, err := stdinWriter.Write([]byte{'\x03'}); err != nil {
 		t.Fatal(err)
 	}
 	assertShellWrite(t, shell.writes, "\x03")
-
-	if _, err := stdinWriter.Write([]byte("interactive input")); err != nil {
-		t.Fatal(err)
-	}
-	assertShellWrite(t, shell.writes, "interactive input")
 
 	if err := closeStdinWriter(); err != nil {
 		t.Fatal(err)
@@ -168,28 +156,6 @@ func TestFormatPromptUsesTerminalCellWidth(t *testing.T) {
 
 	if want := 23; width != want {
 		t.Fatalf("prompt width = %d, want %d", width, want)
-	}
-}
-
-func TestIsCompleteTypeAhead(t *testing.T) {
-	tests := []struct {
-		name string
-		data []byte
-		want bool
-	}{
-		{name: "complete command", data: []byte("git status\r"), want: true},
-		{name: "incomplete command", data: []byte("git status"), want: false},
-		{name: "bare enter", data: []byte("\r"), want: false},
-		{name: "interrupt", data: []byte{'\x03'}, want: false},
-		{name: "escape sequence", data: []byte("\x1b[A"), want: false},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := isCompleteTypeAhead(test.data); got != test.want {
-				t.Fatalf("isCompleteTypeAhead(%q) = %t, want %t", test.data, got, test.want)
-			}
-		})
 	}
 }
 

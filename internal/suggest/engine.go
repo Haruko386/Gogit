@@ -36,13 +36,37 @@ func AnalyzeWithBranches(
 		)}
 	}
 
+	nestedName, nestedIndex, hasNested := findNestedSubcommand(context)
+
+	if subcommands, ok := gitNestedSubcommands[context.WordsBefore[1]]; ok &&
+		!hasNested &&
+		!strings.HasPrefix(context.Prefix, "-") &&
+		onlyKnownOptions(
+			context.WordsBefore[2:],
+			gitOptions[context.WordsBefore[1]],
+		) {
+		return Result{
+			Suggestions: matching(
+				subcommands,
+				context.Prefix,
+				nil,
+			),
+		}
+	}
 	if acceptsBranch(context) {
 		return Result{Suggestions: matching(
 			branches, context.Prefix, nil,
 		)}
 	}
 
-	options, ok := gitOptions[context.WordsBefore[1]]
+	optionKey := context.WordsBefore[1]
+	optionStart := 2
+	if hasNested {
+		optionKey += " " + nestedName
+		optionStart = nestedIndex + 1
+	}
+
+	options, ok := gitOptions[optionKey]
 	if !ok {
 		return Result{}
 	}
@@ -52,7 +76,7 @@ func AnalyzeWithBranches(
 		return Result{Hint: hint}
 	}
 
-	used := usedOptions(context.WordsBefore[2:])
+	used := usedOptions(context.WordsBefore[optionStart:], options)
 
 	return Result{Suggestions: matching(
 		options, context.Prefix, used,
@@ -98,6 +122,42 @@ func containsAny(words []string, values ...string) bool {
 	return false
 }
 
+func findNestedSubcommand(context Context) (name string, index int, found bool) {
+	subcommands, ok := gitNestedSubcommands[context.WordsBefore[1]]
+	if !ok {
+		return "", 0, false
+	}
+
+	for wordIndex, word := range context.WordsBefore[2:] {
+		for _, subcommand := range subcommands {
+			if subcommand.Value == word {
+				return subcommand.Value, wordIndex + 2, true
+			}
+		}
+	}
+
+	return "", 0, false
+}
+
+func onlyKnownOptions(words []string, options []Suggestion) bool {
+	for index := 0; index < len(words); index++ {
+		name, _, hasEquals := strings.Cut(words[index], "=")
+		option, ok := findOption(options, name)
+		if !ok {
+			return false
+		}
+
+		if option.TakesValue && !hasEquals {
+			index++
+			if index >= len(words) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
 // matching filters candidates to those starting with prefix, skipping the
 // candidate whose value already equals prefix and any value present in excluded.
 func matching(candidates []Suggestion, prefix string, excluded map[string]struct{}) []Suggestion {
@@ -127,28 +187,43 @@ func matching(candidates []Suggestion, prefix string, excluded map[string]struct
 }
 
 func suggestionWasUsed(candidate Suggestion, used map[string]struct{}) bool {
+	for _, conflict := range candidate.ConflictsWith {
+		if _, exists := used[conflict]; exists {
+			return true
+		}
+	}
+
 	if candidate.Repeatable {
 		return false
 	}
+
 	if _, exists := used[candidate.Value]; exists {
 		return true
 	}
+
 	for _, alias := range candidate.Aliases {
 		if _, exists := used[alias]; exists {
 			return true
 		}
 	}
+
 	return false
 }
 
 // usedOptions collects the option names that already appear among words, so
 // they can be excluded from further suggestions. Values passed with "=" are
 // keyed by the option name only.
-func usedOptions(words []string) map[string]struct{} {
+func usedOptions(words []string, options []Suggestion) map[string]struct{} {
 	used := make(map[string]struct{}, len(words))
 
 	for _, word := range words {
 		name, _, _ := strings.Cut(word, "=")
+
+		option, ok := findOption(options, name)
+		if ok {
+			used[option.Value] = struct{}{}
+			continue
+		}
 		used[name] = struct{}{}
 	}
 
