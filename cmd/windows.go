@@ -6,39 +6,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/Haruko386/Gogit/internal/protocol"
 )
 
-func systemShell(marker string) (*exec.Cmd, func(), error) {
-	begin := protocol.BeginMarker(marker)
-	end := protocol.EndMarker(marker)
-
-	script := fmt.Sprintf(`
-$env:CONDA_CHANGEPS1 = 'false'
-$env:VIRTUAL_ENV_DISABLE_PROMPT = '1'
-
-function global:prompt {
-    $environmentName = ''
-
-    if (-not [string]::IsNullOrWhiteSpace(
-        $env:CONDA_DEFAULT_ENV
-    )) {
-        $environmentName = $env:CONDA_DEFAULT_ENV
-    }
-    elseif (-not [string]::IsNullOrWhiteSpace(
-        $env:VIRTUAL_ENV
-    )) {
-		$environmentName = Split-Path -Leaf -Path $env:VIRTUAL_ENV
-    }
-
-    $directory = (
-        $executionContext.SessionState.Path.CurrentLocation.Path
-    )
-
-	return '%s' + $environmentName + [char]31 + $directory + '%s'
-}
-`, begin, end)
+func systemShell(marker string) (*exec.Cmd, commandWrapper, func(), error) {
+	recoveryName := protocol.RecoveryName(marker)
+	script := powershellInitScript(marker)
 
 	var command *exec.Cmd
 
@@ -66,5 +41,50 @@ function global:prompt {
 		"VIRTUAL_ENV_DISABLE_PROMPT=1",
 	)
 
-	return command, func() {}, nil
+	return command, func(input string) string {
+		if strings.TrimSpace(input) == "" {
+			return input
+		}
+		return ". {\n" + input + "\n}; " +
+			"if (Test-Path Function:\\global:" + recoveryName + ") { & " + recoveryName +
+			" } else { [Console]::Error.WriteLine('Gogit: prompt protocol recovery failed; continuing in pass-through mode.') }"
+	}, func() {}, nil
+}
+
+func powershellInitScript(marker string) string {
+	begin := protocol.BeginMarker(marker)
+	end := protocol.EndMarker(marker)
+	recoveryName := protocol.RecoveryName(marker)
+
+	return fmt.Sprintf(`
+$env:CONDA_CHANGEPS1 = 'false'
+$env:VIRTUAL_ENV_DISABLE_PROMPT = '1'
+
+$global:__gogit_prompt_impl = {
+    $environmentName = ''
+
+    if (-not [string]::IsNullOrWhiteSpace(
+        $env:CONDA_DEFAULT_ENV
+    )) {
+        $environmentName = $env:CONDA_DEFAULT_ENV
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace(
+        $env:VIRTUAL_ENV
+    )) {
+		$environmentName = Split-Path -Leaf -Path $env:VIRTUAL_ENV
+    }
+
+    $directory = (
+        $executionContext.SessionState.Path.CurrentLocation.Path
+    )
+
+	return '%s' + $environmentName + [char]31 + $directory + '%s'
+}
+
+function global:%s {
+    Set-Item -Path Function:\global:prompt -Value $global:__gogit_prompt_impl
+}
+
+& %s
+`, begin, end, recoveryName, recoveryName)
 }

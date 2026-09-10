@@ -3,13 +3,15 @@ package protocol
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 )
 
 const (
-	markerPrefix   = "__GOGIT_READY_"
-	fieldSeparator = byte(0x1f)
+	markerPrefix       = "__GOGIT_READY_"
+	fieldSeparator     = byte(0x1f)
+	maxPromptFrameSize = 64 * 1024
 )
 
 type Prompt struct {
@@ -34,6 +36,13 @@ func BeginMarker(marker string) string {
 
 func EndMarker(marker string) string {
 	return marker + "PROMPT_END__"
+}
+
+// RecoveryName returns a shell-safe, session-specific function name. Keeping
+// the recovery entry point unpredictable avoids collisions with user config.
+func RecoveryName(marker string) string {
+	sum := sha256.Sum256([]byte(marker))
+	return "__gogit_recover_" + hex.EncodeToString(sum[:8])
 }
 
 // Scanner removes shell-ready markers from arbitrarily chunked PTY output.
@@ -74,6 +83,16 @@ func (s *Scanner) Push(data []byte) (
 		delimiter := s.begin
 		if s.inside {
 			delimiter = s.end
+
+			// A new begin marker before an end marker means the previous frame
+			// was damaged. Resynchronize without exposing either marker.
+			beginIndex := bytes.Index(buffer, s.begin)
+			endIndex := bytes.Index(buffer, s.end)
+			if beginIndex >= 0 && (endIndex < 0 || beginIndex < endIndex) {
+				s.frame = nil
+				buffer = buffer[beginIndex+len(s.begin):]
+				continue
+			}
 		}
 
 		index := bytes.Index(buffer, delimiter)
@@ -103,6 +122,14 @@ func (s *Scanner) Push(data []byte) (
 		stable := buffer[:len(buffer)-keep]
 
 		if s.inside {
+			if len(s.frame)+len(stable) > maxPromptFrameSize {
+				// A corrupt frame must not consume unbounded memory or hide all
+				// subsequent shell output forever. Discard it and scan afresh.
+				s.frame = nil
+				s.inside = false
+				s.pending = nil
+				break
+			}
 			s.frame = append(s.frame, stable...)
 		} else {
 			visible = append(visible, stable...)
@@ -121,18 +148,14 @@ func (s *Scanner) Push(data []byte) (
 	return visible, prompts
 }
 
-// Flush releases bytes that were temporarily held because they looked like
-// the beginning of a marker.
+// Flush resets an incomplete protocol frame. Partial markers are deliberately
+// discarded: exposing them would leak the per-session protocol token.
 func (s *Scanner) Flush() []byte {
-	remaining := make([]byte, 0, len(s.frame)+len(s.pending))
-	remaining = append(remaining, s.frame...)
-	remaining = append(remaining, s.pending...)
-
 	s.pending = nil
 	s.frame = nil
 	s.inside = false
 
-	return remaining
+	return nil
 }
 
 func parsePrompt(data []byte) Prompt {

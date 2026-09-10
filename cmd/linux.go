@@ -10,7 +10,7 @@ import (
 	"syscall"
 )
 
-func systemShell(marker string) (*exec.Cmd, func(), error) {
+func systemShell(marker string) (*exec.Cmd, commandWrapper, func(), error) {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
@@ -18,7 +18,7 @@ func systemShell(marker string) (*exec.Cmd, func(), error) {
 
 	temporaryDirectory, err := os.MkdirTemp("", "gogit-shell-")
 	if err != nil {
-		return nil, nil, fmt.Errorf("create shell configuration: %w", err)
+		return nil, nil, nil, fmt.Errorf("create shell configuration: %w", err)
 	}
 	cleanup := func() {
 		_ = os.RemoveAll(temporaryDirectory)
@@ -32,7 +32,7 @@ func systemShell(marker string) (*exec.Cmd, func(), error) {
 		initFile := filepath.Join(temporaryDirectory, "bashrc")
 		if err := os.WriteFile(initFile, []byte(bashInitScript(marker)), 0o600); err != nil {
 			cleanup()
-			return nil, nil, fmt.Errorf("write Bash configuration: %w", err)
+			return nil, nil, nil, fmt.Errorf("write Bash configuration: %w", err)
 		}
 		arguments = []string{"--rcfile", initFile, "-i"}
 
@@ -40,13 +40,13 @@ func systemShell(marker string) (*exec.Cmd, func(), error) {
 		zshEnvFile := filepath.Join(temporaryDirectory, ".zshenv")
 		if err := os.WriteFile(zshEnvFile, []byte(zshEnvInitScript()), 0o600); err != nil {
 			cleanup()
-			return nil, nil, fmt.Errorf("write Zsh environment bootstrap: %w", err)
+			return nil, nil, nil, fmt.Errorf("write Zsh environment bootstrap: %w", err)
 		}
 
 		zshRCFile := filepath.Join(temporaryDirectory, ".zshrc")
 		if err := os.WriteFile(zshRCFile, []byte(zshInitScript(marker)), 0o600); err != nil {
 			cleanup()
-			return nil, nil, fmt.Errorf("write Zsh configuration: %w", err)
+			return nil, nil, nil, fmt.Errorf("write Zsh configuration: %w", err)
 		}
 
 		userZDOTDIR, zdotdirWasSet := os.LookupEnv("ZDOTDIR")
@@ -65,7 +65,7 @@ func systemShell(marker string) (*exec.Cmd, func(), error) {
 		initFile := filepath.Join(temporaryDirectory, "profile")
 		if err := os.WriteFile(initFile, []byte(posixInitScript(marker)), 0o600); err != nil {
 			cleanup()
-			return nil, nil, fmt.Errorf("write POSIX shell configuration: %w", err)
+			return nil, nil, nil, fmt.Errorf("write POSIX shell configuration: %w", err)
 		}
 
 		environment = append(
@@ -92,5 +92,7 @@ func systemShell(marker string) (*exec.Cmd, func(), error) {
 		"VIRTUAL_ENV_DISABLE_PROMPT=1",
 	)
 
-	return command, cleanup, nil
+	return command, func(input string) string {
+		return wrapPOSIXCommand(input, marker)
+	}, cleanup, nil
 }

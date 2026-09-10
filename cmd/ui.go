@@ -35,6 +35,8 @@ type branchLoadResult struct {
 	branches   []suggest.Suggestion
 }
 
+type commandWrapper func(string) string
+
 var (
 	bracketedPasteStart = []byte("\x1b[200~")
 	bracketedPasteEnd   = []byte("\x1b[201~")
@@ -66,7 +68,7 @@ func (s *bracketedPasteState) observe(data []byte) {
 	}
 }
 
-func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-chan error) (resizeFinished bool, resultErr error) {
+func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-chan error, wrappers ...commandWrapper) (resizeFinished bool, resultErr error) {
 	inputEvents := readStream(os.Stdin)
 	outputEvents := readStream(shellSession)
 	shellDone := make(chan error, 1)
@@ -93,6 +95,10 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 		pendingKeys      []terminal.Key
 		pasteState       bracketedPasteState
 	)
+	wrapCommand := commandWrapper(func(command string) string { return command })
+	if len(wrappers) > 0 && wrappers[0] != nil {
+		wrapCommand = wrappers[0]
+	}
 	defer func() {
 		if branchCancel != nil {
 			branchCancel()
@@ -273,7 +279,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 
 				command := lineEditor.Line()
 				commandHistory.Add(command)
-				command += "\r"
+				command = wrapCommand(command) + "\r"
 
 				if err := writeAll(shellSession, []byte(command)); err != nil {
 					return changed, consumed, fmt.Errorf(

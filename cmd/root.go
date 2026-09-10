@@ -39,7 +39,7 @@ func runPersistentShell() (resultErr error) {
 		return err
 	}
 
-	shellCommand, cleanupShell, err := systemShell(marker)
+	shellCommand, wrapCommand, cleanupShell, err := systemShell(marker)
 	if err != nil {
 		return err
 	}
@@ -71,6 +71,7 @@ func runPersistentShell() (resultErr error) {
 		shellSession,
 		marker,
 		resizeDone,
+		wrapCommand,
 	)
 
 	stopResize()

@@ -78,19 +78,47 @@ func TestZshEnvBootstrapPreservesUserChangesBeforeRestoringBootstrapDirectory(t 
 }
 
 func TestShellInitScriptsAppendFinalPromptHooks(t *testing.T) {
-	bashScript := bashInitScript("bash-hook-test")
+	bashMarker := "bash-hook-test"
+	bashRecovery := protocol.RecoveryName(bashMarker)
+	bashScript := bashInitScript(bashMarker)
 	for _, expected := range []string{
-		"PROMPT_COMMAND+=(__gogit_restore_prompt)",
-		`PROMPT_COMMAND="${PROMPT_COMMAND%;};__gogit_restore_prompt"`,
+		"PROMPT_COMMAND+=(" + bashRecovery + ")",
+		`PROMPT_COMMAND="${PROMPT_COMMAND%;};` + bashRecovery + `"`,
 	} {
 		if !strings.Contains(bashScript, expected) {
 			t.Fatalf("Bash init script does not contain %q: %q", expected, bashScript)
 		}
 	}
 
-	zshScript := zshInitScript("zsh-hook-test")
-	if expected := "precmd_functions+=(__gogit_restore_prompt)"; !strings.Contains(zshScript, expected) {
+	zshMarker := "zsh-hook-test"
+	zshScript := zshInitScript(zshMarker)
+	if expected := "precmd_functions+=(" + protocol.RecoveryName(zshMarker) + ")"; !strings.Contains(zshScript, expected) {
 		t.Fatalf("Zsh init script does not contain %q: %q", expected, zshScript)
+	}
+}
+
+func TestPOSIXCommandWrapperRestoresPromptAfterUserCommand(t *testing.T) {
+	marker := "wrapper-test"
+	command := "PS1=user-prompt # deliberately replace the protocol prompt"
+	wrapped := wrapPOSIXCommand(command, marker)
+
+	if !strings.Contains(wrapped, command) {
+		t.Fatalf("wrapped command lost user input: %q", wrapped)
+	}
+	if !strings.Contains(wrapped, protocol.RecoveryName(marker)) {
+		t.Fatalf("wrapped command does not invoke recovery: %q", wrapped)
+	}
+	if !strings.Contains(wrapped, "\n}; ") {
+		t.Fatalf("recovery is not protected from a trailing comment: %q", wrapped)
+	}
+	if !strings.Contains(wrapped, "pass-through mode") {
+		t.Fatalf("wrapped command has no safe-degradation message: %q", wrapped)
+	}
+}
+
+func TestPOSIXCommandWrapperLeavesBlankCommandAlone(t *testing.T) {
+	if got := wrapPOSIXCommand("   ", "wrapper-test"); got != "   " {
+		t.Fatalf("blank command = %q", got)
 	}
 }
 
