@@ -42,13 +42,19 @@ func systemShell(marker string) (*exec.Cmd, commandWrapper, func(), error) {
 	)
 
 	return command, func(input string) string {
-		if strings.TrimSpace(input) == "" {
-			return input
-		}
-		return ". {\n" + input + "\n}; " +
-			"if (Test-Path Function:\\global:" + recoveryName + ") { & " + recoveryName +
-			" } else { [Console]::Error.WriteLine('Gogit: prompt protocol recovery failed; continuing in pass-through mode.') }"
+		return wrapPowerShellCommand(input, recoveryName)
 	}, func() {}, nil
+}
+
+func wrapPowerShellCommand(input, recoveryName string) string {
+	if strings.TrimSpace(input) == "" {
+		return input
+	}
+
+	return ". {\n" + input + "\n$__gogit_command_succeeded = $?\n}; " +
+		"if (Test-Path Function:\\global:" + recoveryName + ") { & " + recoveryName +
+		" } else { [Console]::Error.WriteLine('Gogit: prompt protocol recovery failed; continuing in pass-through mode.') }; " +
+		"if (-not $__gogit_command_succeeded) { Write-Error 'Gogit: preserving command failure status.' -ErrorAction Ignore }"
 }
 
 func powershellInitScript(marker string) string {

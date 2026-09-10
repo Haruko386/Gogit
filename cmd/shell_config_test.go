@@ -83,7 +83,7 @@ func TestShellInitScriptsAppendFinalPromptHooks(t *testing.T) {
 	bashScript := bashInitScript(bashMarker)
 	for _, expected := range []string{
 		"PROMPT_COMMAND+=(" + bashRecovery + ")",
-		`PROMPT_COMMAND="${PROMPT_COMMAND%;};` + bashRecovery + `"`,
+		`PROMPT_COMMAND="${PROMPT_COMMAND%%;};` + bashRecovery + `"`,
 	} {
 		if !strings.Contains(bashScript, expected) {
 			t.Fatalf("Bash init script does not contain %q: %q", expected, bashScript)

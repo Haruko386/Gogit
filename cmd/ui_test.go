@@ -93,8 +93,11 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 	marker := "multiline-test"
 	resizeDone := make(chan error)
 	result := make(chan error, 1)
+	wrapCommand := func(command string) string {
+		return "wrapped(" + command + ")"
+	}
 	go func() {
-		_, runErr := runShellUI(shell, marker, resizeDone)
+		_, runErr := runShellUI(shell, marker, resizeDone, wrapCommand)
 		result <- runErr
 	}()
 
@@ -105,7 +108,7 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertShellWrite(t, shell.writes, "git status\r")
+	assertShellWrite(t, shell.writes, "wrapped(git status)\r")
 	writePromptFrame(t, shellWriter, marker)
 
 	if _, err := stdinWriter.Write([]byte("go test ./...\r\n\x1b[20")); err != nil {
@@ -116,7 +119,27 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 	if _, err := stdinWriter.Write([]byte("1~")); err != nil {
 		t.Fatal(err)
 	}
-	assertShellWrite(t, shell.writes, "go test ./...\r")
+	assertShellWrite(t, shell.writes, "wrapped(go test ./...)\r")
+
+	// A complete command arriving in a later read while the previous command
+	// runs must wait for the prompt so it cannot bypass protocol recovery.
+	if _, err := stdinWriter.Write([]byte("function prompt { 'custom' }\r")); err != nil {
+		t.Fatal(err)
+	}
+	assertNoShellWrite(t, shell.writes)
+
+	writePromptFrame(t, shellWriter, marker)
+	assertShellWrite(
+		t,
+		shell.writes,
+		"wrapped(function prompt { 'custom' })\r",
+	)
+
+	// Interactive control input still belongs to the running PTY.
+	if _, err := stdinWriter.Write([]byte{'\x03'}); err != nil {
+		t.Fatal(err)
+	}
+	assertShellWrite(t, shell.writes, "\x03")
 
 	if _, err := stdinWriter.Write([]byte("interactive input")); err != nil {
 		t.Fatal(err)
@@ -145,6 +168,28 @@ func TestFormatPromptUsesTerminalCellWidth(t *testing.T) {
 
 	if want := 23; width != want {
 		t.Fatalf("prompt width = %d, want %d", width, want)
+	}
+}
+
+func TestIsCompleteTypeAhead(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{name: "complete command", data: []byte("git status\r"), want: true},
+		{name: "incomplete command", data: []byte("git status"), want: false},
+		{name: "bare enter", data: []byte("\r"), want: false},
+		{name: "interrupt", data: []byte{'\x03'}, want: false},
+		{name: "escape sequence", data: []byte("\x1b[A"), want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isCompleteTypeAhead(test.data); got != test.want {
+				t.Fatalf("isCompleteTypeAhead(%q) = %t, want %t", test.data, got, test.want)
+			}
+		})
 	}
 }
 

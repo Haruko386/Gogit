@@ -31,7 +31,7 @@ func bashInitScript(marker string) string {
 if [[ $(declare -p PROMPT_COMMAND 2>/dev/null) =~ ^declare[[:space:]]+-[^[:space:]]*a[^[:space:]]*[[:space:]]+PROMPT_COMMAND= ]]; then
     PROMPT_COMMAND+=(%s)
 elif [[ -n ${PROMPT_COMMAND-} ]]; then
-    PROMPT_COMMAND="${PROMPT_COMMAND%%;};%s"
+    PROMPT_COMMAND="${PROMPT_COMMAND%%%%;};%s"
 else
     PROMPT_COMMAND=%s
 fi

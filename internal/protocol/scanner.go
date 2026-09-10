@@ -100,6 +100,13 @@ func (s *Scanner) Push(data []byte) (
 			stable := buffer[:index]
 
 			if s.inside {
+				if len(s.frame)+len(stable) > maxPromptFrameSize {
+					buffer = buffer[index+len(delimiter):]
+					s.frame = nil
+					s.inside = false
+					s.pending = nil
+					continue
+				}
 				s.frame = append(s.frame, stable...)
 			} else {
 				visible = append(visible, stable...)
@@ -119,6 +126,9 @@ func (s *Scanner) Push(data []byte) (
 		}
 
 		keep := matchingSuffixLength(buffer, delimiter)
+		if s.inside {
+			keep = max(keep, matchingSuffixLength(buffer, s.begin))
+		}
 		stable := buffer[:len(buffer)-keep]
 
 		if s.inside {
