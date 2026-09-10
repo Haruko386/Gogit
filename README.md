@@ -116,6 +116,71 @@ At least not for a beginner
     <img width="80%" src="./external/gif/demo.gif">
 </div>
 
+## Install and run from anywhere
+
+Gogit requires **Go 1.25 or later** and **Git**. Clone this repository, enter
+its directory, and install the executable into your Go binary directory.
+
+```bash
+git clone https://github.com/Haruko386/Gogit.git
+cd Gogit
+```
+
+### Windows PowerShell
+
+```powershell
+$installDir = go env GOBIN
+if ([string]::IsNullOrWhiteSpace($installDir)) {
+    $installDir = Join-Path (go env GOPATH) "bin"
+}
+
+New-Item -ItemType Directory -Force $installDir | Out-Null
+go build -o (Join-Path $installDir "gogit.exe") .
+
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (($userPath -split ";") -notcontains $installDir) {
+    $newPath = if ($userPath) { "$userPath;$installDir" } else { $installDir }
+    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+}
+$env:Path += ";$installDir"
+```
+
+### macOS or Linux
+
+```bash
+install_dir="$(go env GOBIN)"
+if [ -z "$install_dir" ]; then
+    install_dir="$(go env GOPATH)/bin"
+fi
+
+mkdir -p "$install_dir"
+go build -o "$install_dir/gogit" .
+```
+
+Add that directory to your shell's `PATH` if it is not already available:
+
+```bash
+# Bash
+echo 'export PATH="$(go env GOPATH)/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# Zsh (the default shell on modern macOS)
+echo 'export PATH="$(go env GOPATH)/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+If you configured a custom `GOBIN`, add that directory instead of
+`$(go env GOPATH)/bin`.
+
+Verify the installation from a new terminal or any directory:
+
+```bash
+gogit
+```
+
+This opens the Gogit-assisted shell. Type Git commands normally and press
+`Ctrl+D` on an empty input line when you want to leave Gogit.
+
 It simply tries to help when you're staring at this:
 
 ```bash
