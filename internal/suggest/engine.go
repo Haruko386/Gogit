@@ -100,8 +100,21 @@ func acceptsBranch(context Context) bool {
 			context.WordsBefore[2:],
 			"-b", "-B", "--orphan",
 		)
-	case "merge", "rebase", "reset", "log", "diff":
+	case "merge", "reset", "log", "diff":
 		return true
+	case "rebase":
+		return !containsAny(
+			context.WordsBefore[2:],
+			"--continue",
+			"--skip",
+			"--abort",
+			"--quit",
+			"--edit-todo",
+			"--show-current-patch",
+		)
+	case "revert", "cherry-pick":
+		return !containsAny(
+			context.WordsBefore[2:], "--continue", "--skip", "--abort", "--quit")
 	case "pull", "push":
 		// The first positional argument is the remote; following arguments are
 		// refs or refspecs.
