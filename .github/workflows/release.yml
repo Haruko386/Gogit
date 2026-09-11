@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*.*.*"
+      - "nightly"
+      - "nightly-*"
 
 permissions:
   contents: read
@@ -103,10 +105,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          release_flags=()
+          if [[ "${GITHUB_REF_NAME}" == nightly* ]]; then
+            release_flags+=(--prerelease)
+          fi
+
           gh release create "${GITHUB_REF_NAME}" \
             dist/gogit-* \
             dist/checksums.txt \
             --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes \
-            --verify-tag
+            --verify-tag \
+            "${release_flags[@]}"
