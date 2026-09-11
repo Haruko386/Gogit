@@ -77,6 +77,9 @@ func TestSuggestsCommonSubcommands(t *testing.T) {
 		{line: "git ini", want: "init"},
 		{line: "git rem", want: "remote"},
 		{line: "git ta", want: "tag"},
+		{line: "git rese", want: "reset"},
+		{line: "git reve", want: "revert"},
+		{line: "git cherry-p", want: "cherry-pick"},
 	}
 
 	for _, test := range tests {
@@ -279,6 +282,8 @@ func TestAnalyzeSuggestsRepositoryBranches(t *testing.T) {
 		{line: "git reset --hard or", want: []string{"origin/dev", "origin/main"}},
 		{line: "git pull origin ma", want: []string{"main"}},
 		{line: "git push origin fe", want: []string{"feature/login"}},
+		{line: "git revert ma", want: []string{"main"}},
+		{line: "git cherry-pick fe", want: []string{"feature/login"}},
 	}
 
 	for _, test := range tests {
@@ -652,5 +657,551 @@ func TestRemoteAddTrackOptionIsRepeatable(t *testing.T) {
 			"repeatable -t was not suggested: %#v",
 			got,
 		)
+	}
+}
+
+func TestSuggestsHistoryEditingOptions(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git reset --har", want: "--hard"},
+		{line: "git reset --patc", want: "--patch"},
+		{line: "git revert --no-c", want: "--no-commit"},
+		{line: "git revert --main", want: "--mainline"},
+		{line: "git cherry-pick --f", want: "--ff"},
+		{line: "git cherry-pick --emp", want: "--empty"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+
+			if len(got) != 1 || got[0].Value != test.want {
+				t.Fatalf(
+					"Suggest(%q) = %#v, want %q",
+					test.line,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestAnalyzeHistoryEditingValueHints(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{
+			line: "git reset --pathspec-from-file ",
+			want: "file",
+		},
+		{
+			line: "git revert -m ",
+			want: "parent-number",
+		},
+		{
+			line: "git revert --strategy ",
+			want: "strategy",
+		},
+		{
+			line: "git cherry-pick -X ",
+			want: "option",
+		},
+		{
+			line: "git cherry-pick --empty=",
+			want: "mode",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := Analyze(test.line, len([]rune(test.line)))
+
+			if result.Hint == nil {
+				t.Fatalf("Analyze(%q) returned no value hint", test.line)
+			}
+			if result.Hint.Name != test.want {
+				t.Fatalf(
+					"hint name = %q, want %q",
+					result.Hint.Name,
+					test.want,
+				)
+			}
+			if len(result.Suggestions) != 0 {
+				t.Fatalf(
+					"value position returned suggestions: %#v",
+					result.Suggestions,
+				)
+			}
+		})
+	}
+}
+
+func TestHistoryEditingOptionConflicts(t *testing.T) {
+	tests := []string{
+		"git reset --hard --so",
+		"git reset -p --mi",
+		"git revert --continue --ab",
+		"git revert --edit --no-e",
+		"git cherry-pick --skip --con",
+		"git cherry-pick --no-edit --ed",
+	}
+
+	for _, line := range tests {
+		t.Run(line, func(t *testing.T) {
+			got := Suggest(line, len([]rune(line)))
+			if len(got) != 0 {
+				t.Fatalf(
+					"Suggest(%q) = %#v, want no conflicting option",
+					line,
+					got,
+				)
+			}
+		})
+	}
+}
+
+func TestHistoryEditingStrategyOptionIsRepeatable(t *testing.T) {
+	lines := []string{
+		"git revert -X ours --str",
+		"git cherry-pick --strategy-option=ours --str",
+	}
+
+	for _, line := range lines {
+		t.Run(line, func(t *testing.T) {
+			got := Suggest(line, len([]rune(line)))
+
+			found := false
+			for _, candidate := range got {
+				if candidate.Value == "--strategy-option" {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				t.Fatalf(
+					"repeatable --strategy-option was not suggested: %#v",
+					got,
+				)
+			}
+		})
+	}
+}
+
+func TestSequencerActionsDoNotSuggestBranches(t *testing.T) {
+	branches := []Suggestion{
+		{Value: "main", Kind: KindBranch},
+	}
+
+	lines := []string{
+		"git revert --continue ma",
+		"git cherry-pick --abort ma",
+	}
+
+	for _, line := range lines {
+		result := AnalyzeWithBranches(
+			line,
+			len([]rune(line)),
+			branches,
+		)
+
+		if len(result.Suggestions) != 0 {
+			t.Fatalf(
+				"AnalyzeWithBranches(%q) = %#v, want no branches",
+				line,
+				result.Suggestions,
+			)
+		}
+	}
+}
+
+func TestSuggestsFileManagementSubcommands(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git cle", want: "clean"},
+		{line: "git r", want: "rm"},
+		{line: "git m", want: "mv"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+
+			found := false
+			for _, candidate := range got {
+				if candidate.Value == test.want {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				t.Fatalf(
+					"Suggest(%q) = %#v, missing %q",
+					test.line,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestSuggestsFileManagementOptions(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git clean --dry", want: "--dry-run"},
+		{line: "git clean --inter", want: "--interactive"},
+		{line: "git clean --exc", want: "--exclude"},
+		{line: "git rm --cach", want: "--cached"},
+		{line: "git rm --ignore", want: "--ignore-unmatch"},
+		{line: "git rm --pathspec-from", want: "--pathspec-from-file"},
+		{line: "git mv --verb", want: "--verbose"},
+		{line: "git mv --spa", want: "--sparse"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+
+			if len(got) != 1 || got[0].Value != test.want {
+				t.Fatalf(
+					"Suggest(%q) = %#v, want %q",
+					test.line,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestAnalyzeFileManagementValueHints(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{
+			line: "git clean -e ",
+			want: "pattern",
+		},
+		{
+			line: "git rm --pathspec-from-file ",
+			want: "file",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := Analyze(test.line, len([]rune(test.line)))
+
+			if result.Hint == nil {
+				t.Fatalf("Analyze(%q) returned no value hint", test.line)
+			}
+			if result.Hint.Name != test.want {
+				t.Fatalf(
+					"hint name = %q, want %q",
+					result.Hint.Name,
+					test.want,
+				)
+			}
+			if len(result.Suggestions) != 0 {
+				t.Fatalf(
+					"value position returned suggestions: %#v",
+					result.Suggestions,
+				)
+			}
+		})
+	}
+}
+
+func TestCleanExcludeIsRepeatable(t *testing.T) {
+	line := "git clean -e build --ex"
+	got := Suggest(line, len([]rune(line)))
+
+	found := false
+	for _, candidate := range got {
+		if candidate.Value == "--exclude" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatalf("repeatable --exclude was not suggested: %#v", got)
+	}
+}
+
+func TestCleanModesAreMutuallyExclusive(t *testing.T) {
+	tests := []struct {
+		line      string
+		forbidden string
+	}{
+		{
+			line:      "git clean -x -",
+			forbidden: "-X",
+		},
+		{
+			line:      "git clean -X -",
+			forbidden: "-x",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+
+			for _, candidate := range got {
+				if candidate.Value == test.forbidden {
+					t.Fatalf(
+						"Suggest(%q) returned conflicting option %q: %#v",
+						test.line,
+						test.forbidden,
+						got,
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestSuggestsRebaseOptions(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git rebase --ont", want: "--onto"},
+		{line: "git rebase --keep-b", want: "--keep-base"},
+		{line: "git rebase --inter", want: "--interactive"},
+		{line: "git rebase --autosq", want: "--autosquash"},
+		{line: "git rebase --autost", want: "--autostash"},
+		{line: "git rebase --update", want: "--update-refs"},
+		{line: "git rebase --rebase-m", want: "--rebase-merges"},
+		{line: "git rebase --force-r", want: "--force-rebase"},
+		{line: "git rebase --edit-t", want: "--edit-todo"},
+		{line: "git rebase --show-c", want: "--show-current-patch"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+
+			if len(got) != 1 || got[0].Value != test.want {
+				t.Fatalf(
+					"Suggest(%q) = %#v, want %q",
+					test.line,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestAnalyzeRebaseValueHints(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git rebase --onto ", want: "revision"},
+		{line: "git rebase -x ", want: "command"},
+		{line: "git rebase --empty=", want: "mode"},
+		{line: "git rebase -s ", want: "strategy"},
+		{line: "git rebase -X ", want: "option"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := Analyze(test.line, len([]rune(test.line)))
+
+			if result.Hint == nil {
+				t.Fatalf("Analyze(%q) returned no value hint", test.line)
+			}
+			if result.Hint.Name != test.want {
+				t.Fatalf(
+					"hint name = %q, want %q",
+					result.Hint.Name,
+					test.want,
+				)
+			}
+			if len(result.Suggestions) != 0 {
+				t.Fatalf(
+					"value position returned suggestions: %#v",
+					result.Suggestions,
+				)
+			}
+		})
+	}
+}
+
+func TestRebaseOptionConflicts(t *testing.T) {
+	tests := []struct {
+		line      string
+		forbidden string
+	}{
+		{
+			line:      "git rebase --onto main --keep",
+			forbidden: "--keep-base",
+		},
+		{
+			line:      "git rebase --keep-base --ont",
+			forbidden: "--onto",
+		},
+		{
+			line:      "git rebase --apply --mer",
+			forbidden: "--merge",
+		},
+		{
+			line:      "git rebase --autosquash --no-auto",
+			forbidden: "--no-autosquash",
+		},
+		{
+			line:      "git rebase --continue --abo",
+			forbidden: "--abort",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+
+			for _, candidate := range got {
+				if candidate.Value == test.forbidden {
+					t.Fatalf(
+						"Suggest(%q) returned conflicting option %q: %#v",
+						test.line,
+						test.forbidden,
+						got,
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestRebaseOptionsCanRepeatWhereAllowed(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{
+			line: "git rebase -x \"go test ./...\" --ex",
+			want: "--exec",
+		},
+		{
+			line: "git rebase -X ours --strategy-o",
+			want: "--strategy-option",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+
+			found := false
+			for _, candidate := range got {
+				if candidate.Value == test.want {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				t.Fatalf(
+					"Suggest(%q) = %#v, missing repeatable %q",
+					test.line,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestRebaseApplyConflictsAreSymmetric(t *testing.T) {
+	options := gitOptions["rebase"]
+	apply, ok := findOption(options, "--apply")
+	if !ok {
+		t.Fatal("rebase --apply option is missing")
+	}
+
+	conflicts := []string{
+		"--strategy",
+		"--strategy-option",
+		"--autosquash",
+		"--interactive",
+		"--exec",
+		"--empty",
+		"--update-refs",
+	}
+
+	contains := func(values []string, want string) bool {
+		for _, value := range values {
+			if value == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, value := range conflicts {
+		if !contains(apply.ConflictsWith, value) {
+			t.Errorf("--apply does not conflict with %s", value)
+		}
+
+		option, found := findOption(options, value)
+		if !found {
+			t.Fatalf("rebase %s option is missing", value)
+		}
+		if !contains(option.ConflictsWith, "--apply") {
+			t.Errorf("%s does not conflict with --apply", value)
+		}
+	}
+
+	keepBase, _ := findOption(options, "--keep-base")
+	root, _ := findOption(options, "--root")
+	if !contains(keepBase.ConflictsWith, "--root") ||
+		!contains(root.ConflictsWith, "--keep-base") {
+		t.Error("--keep-base and --root conflicts are not symmetric")
+	}
+}
+
+func TestRebaseApplyRootConflictDependsOnOnto(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git rebase --root --app", want: ""},
+		{line: "git rebase --apply --ro", want: ""},
+		{line: "git rebase --root --onto main --app", want: "--apply"},
+		{line: "git rebase --apply --onto main --ro", want: "--root"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+			found := false
+			for _, candidate := range got {
+				if candidate.Value == test.want {
+					found = true
+					break
+				}
+			}
+
+			if test.want == "" && len(got) != 0 {
+				t.Fatalf("Suggest(%q) = %#v, want no candidate", test.line, got)
+			}
+			if test.want != "" && !found {
+				t.Fatalf("Suggest(%q) = %#v, missing %q", test.line, got, test.want)
+			}
+		})
 	}
 }
