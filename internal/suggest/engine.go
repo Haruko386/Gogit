@@ -201,7 +201,8 @@ func matching(candidates []Suggestion, prefix string, excluded map[string]struct
 
 func suggestionWasUsed(candidate Suggestion, used map[string]struct{}) bool {
 	for _, conflict := range candidate.ConflictsWith {
-		if _, exists := used[conflict]; exists {
+		if _, exists := used[conflict]; exists &&
+			optionConflictApplies(candidate.Value, conflict, used) {
 			return true
 		}
 	}
@@ -221,6 +222,23 @@ func suggestionWasUsed(candidate Suggestion, used map[string]struct{}) bool {
 	}
 
 	return false
+}
+
+// --apply and --root are incompatible unless --onto supplies the new root
+// base. Other option conflicts are unconditional.
+func optionConflictApplies(
+	candidate string,
+	conflict string,
+	used map[string]struct{},
+) bool {
+	applyRootPair := candidate == "--apply" && conflict == "--root" ||
+		candidate == "--root" && conflict == "--apply"
+	if !applyRootPair {
+		return true
+	}
+
+	_, hasOnto := used["--onto"]
+	return !hasOnto
 }
 
 // usedOptions collects the option names that already appear among words, so

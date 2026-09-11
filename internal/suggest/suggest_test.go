@@ -1125,3 +1125,83 @@ func TestRebaseOptionsCanRepeatWhereAllowed(t *testing.T) {
 		})
 	}
 }
+
+func TestRebaseApplyConflictsAreSymmetric(t *testing.T) {
+	options := gitOptions["rebase"]
+	apply, ok := findOption(options, "--apply")
+	if !ok {
+		t.Fatal("rebase --apply option is missing")
+	}
+
+	conflicts := []string{
+		"--strategy",
+		"--strategy-option",
+		"--autosquash",
+		"--interactive",
+		"--exec",
+		"--empty",
+		"--update-refs",
+	}
+
+	contains := func(values []string, want string) bool {
+		for _, value := range values {
+			if value == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, value := range conflicts {
+		if !contains(apply.ConflictsWith, value) {
+			t.Errorf("--apply does not conflict with %s", value)
+		}
+
+		option, found := findOption(options, value)
+		if !found {
+			t.Fatalf("rebase %s option is missing", value)
+		}
+		if !contains(option.ConflictsWith, "--apply") {
+			t.Errorf("%s does not conflict with --apply", value)
+		}
+	}
+
+	keepBase, _ := findOption(options, "--keep-base")
+	root, _ := findOption(options, "--root")
+	if !contains(keepBase.ConflictsWith, "--root") ||
+		!contains(root.ConflictsWith, "--keep-base") {
+		t.Error("--keep-base and --root conflicts are not symmetric")
+	}
+}
+
+func TestRebaseApplyRootConflictDependsOnOnto(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git rebase --root --app", want: ""},
+		{line: "git rebase --apply --ro", want: ""},
+		{line: "git rebase --root --onto main --app", want: "--apply"},
+		{line: "git rebase --apply --onto main --ro", want: "--root"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+			found := false
+			for _, candidate := range got {
+				if candidate.Value == test.want {
+					found = true
+					break
+				}
+			}
+
+			if test.want == "" && len(got) != 0 {
+				t.Fatalf("Suggest(%q) = %#v, want no candidate", test.line, got)
+			}
+			if test.want != "" && !found {
+				t.Fatalf("Suggest(%q) = %#v, missing %q", test.line, got, test.want)
+			}
+		})
+	}
+}
