@@ -47,11 +47,12 @@ func RecoveryName(marker string) string {
 
 // Scanner removes shell-ready markers from arbitrarily chunked PTY output.
 type Scanner struct {
-	begin   []byte
-	end     []byte
-	pending []byte
-	frame   []byte
-	inside  bool
+	begin      []byte
+	end        []byte
+	pending    []byte
+	frame      []byte
+	inside     bool
+	discardEnd bool
 }
 
 // NewScanner creates a scanner for one shell session.
@@ -81,6 +82,7 @@ func (s *Scanner) Push(data []byte) (
 
 	for len(buffer) > 0 {
 		delimiter := s.begin
+		discardingEnd := false
 		if s.inside {
 			delimiter = s.end
 
@@ -92,6 +94,13 @@ func (s *Scanner) Push(data []byte) (
 				s.frame = nil
 				buffer = buffer[beginIndex+len(s.begin):]
 				continue
+			}
+		} else if s.discardEnd {
+			beginIndex := bytes.Index(buffer, s.begin)
+			endIndex := bytes.Index(buffer, s.end)
+			if endIndex >= 0 && (beginIndex < 0 || endIndex < beginIndex) {
+				delimiter = s.end
+				discardingEnd = true
 			}
 		}
 
@@ -118,8 +127,11 @@ func (s *Scanner) Push(data []byte) (
 				prompts = append(prompts, parsePrompt(s.frame))
 				s.frame = nil
 				s.inside = false
+			} else if discardingEnd {
+				s.discardEnd = false
 			} else {
 				s.inside = true
+				s.discardEnd = false
 			}
 
 			continue
@@ -128,6 +140,8 @@ func (s *Scanner) Push(data []byte) (
 		keep := matchingSuffixLength(buffer, delimiter)
 		if s.inside {
 			keep = max(keep, matchingSuffixLength(buffer, s.begin))
+		} else if s.discardEnd {
+			keep = max(keep, matchingSuffixLength(buffer, s.end))
 		}
 		stable := buffer[:len(buffer)-keep]
 
@@ -142,6 +156,7 @@ func (s *Scanner) Push(data []byte) (
 				s.frame = nil
 				s.inside = false
 				s.pending = nil
+				s.discardEnd = true
 				continue
 			}
 			s.frame = append(s.frame, stable...)
@@ -168,6 +183,7 @@ func (s *Scanner) Flush() []byte {
 	s.pending = nil
 	s.frame = nil
 	s.inside = false
+	s.discardEnd = false
 
 	return nil
 }
