@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Haruko386/Gogit/internal/suggest"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestRendererDrawsSuggestionAndDescription(t *testing.T) {
@@ -165,5 +166,69 @@ func TestRendererPositionsCursorByTerminalCellWidth(t *testing.T) {
 				t.Fatalf("cursor sequence not found in %q; want %q", output, want)
 			}
 		})
+	}
+}
+
+func TestInputViewportKeepsLongCommandOnOneRow(t *testing.T) {
+	line := `git commit -m "feat(suggest): add history and file management commands" --author "dimon00"`
+
+	view := View{
+		Prompt:      "(Gogit) ",
+		PromptWidth: 8,
+		Width:       40,
+		Line:        line,
+		Cursor:      len([]rune(line)),
+	}
+
+	prompt, visibleLine, cursorColumn := inputViewport(view)
+	plainLine := ansi.Strip(visibleLine)
+
+	if got := ansi.StringWidth(prompt) + ansi.StringWidth(visibleLine); got > view.Width-1 {
+		t.Fatalf(
+			"viewport width = %d, terminal drawable width = %d",
+			got,
+			view.Width-1,
+		)
+	}
+
+	if cursorColumn > view.Width-1 {
+		t.Fatalf(
+			"cursor column = %d, terminal drawable width = %d",
+			cursorColumn,
+			view.Width-1,
+		)
+	}
+
+	if !strings.HasSuffix(plainLine, `--author "dimon00"`) {
+		t.Fatalf(
+			"viewport does not contain command tail: %q",
+			plainLine,
+		)
+	}
+
+	if plainLine == line {
+		t.Fatalf("long command was not horizontally clipped")
+	}
+}
+
+func TestInputViewportHandlesWideCharacters(t *testing.T) {
+	line := `git commit -m "修复终端显示🚀"`
+
+	view := View{
+		Prompt:      "> ",
+		PromptWidth: 2,
+		Width:       20,
+		Line:        line,
+		Cursor:      len([]rune(line)),
+	}
+
+	prompt, visibleLine, cursorColumn := inputViewport(view)
+
+	if got := ansi.StringWidth(prompt) + ansi.StringWidth(visibleLine); got > view.Width-1 {
+		t.Fatalf("viewport width = %d, want at most %d", got, view.Width-1)
+	}
+
+	if cursorColumn > view.Width-1 {
+		t.Fatalf("cursor column = %d, want at most %d", cursorColumn, view.Width-1)
 	}
 }

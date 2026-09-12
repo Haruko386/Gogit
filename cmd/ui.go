@@ -17,6 +17,7 @@ import (
 	"github.com/Haruko386/Gogit/internal/suggest"
 	"github.com/Haruko386/Gogit/internal/terminal"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/term"
 )
 
 const (
@@ -140,6 +141,11 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 	}
 
 	render := func() error {
+		terminalWidth := fallbackTerminalWidth
+		if width, _, err := term.GetSize(os.Stdout.Fd()); err == nil && width > 0 {
+			terminalWidth = width
+		}
+
 		result := analyze()
 		suggestions := result.Suggestions
 
@@ -157,6 +163,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 		return writeOutput(renderer.Render(terminal.View{
 			Prompt:      prompt,
 			PromptWidth: promptWidth,
+			Width:       terminalWidth,
 			Line:        lineEditor.Line(),
 			Cursor:      lineEditor.Cursor(),
 			Suggestions: suggestions,
