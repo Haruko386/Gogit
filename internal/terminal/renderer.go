@@ -25,6 +25,7 @@ const (
 type View struct {
 	Prompt      string
 	PromptWidth int
+	Width       int
 	Line        string
 	Cursor      int
 	Suggestions []suggest.Suggestion
@@ -77,11 +78,13 @@ func (r *Renderer) Render(view View) string {
 	}
 	rowsToClear := max(currentRows, r.previousSuggestionRows)
 
+	displayPrompt, displayLine, cursorColumn := inputViewport(view)
+
 	var output strings.Builder
 	output.WriteString(hideCursor)
 	output.WriteString(clearLine)
-	output.WriteString(view.Prompt)
-	output.WriteString(highlightInput(view.Line))
+	output.WriteString(displayPrompt)
+	output.WriteString(highlightInput(displayLine))
 
 	for index := range rowsToClear {
 		output.WriteString("\r\n\x1b[2K")
@@ -124,11 +127,6 @@ func (r *Renderer) Render(view View) string {
 	}
 	output.WriteByte('\r')
 
-	lineRunes := []rune(view.Line)
-	cursor := min(max(view.Cursor, 0), len(lineRunes))
-	cursorColumn := view.PromptWidth + ansi.StringWidth(
-		string(lineRunes[:cursor]),
-	)
 	if cursorColumn > 0 {
 		fmt.Fprintf(&output, "\x1b[%dC", cursorColumn)
 	}
@@ -194,4 +192,41 @@ func highlightInput(line string) string {
 	}
 
 	return output.String()
+}
+
+func inputViewport(view View) (prompt, line string, cursorColumn int) {
+	width := view.Width
+	if width < 0 {
+		width = 80
+	}
+
+	drawableWidth := max(width-1, 1)
+
+	prompt = view.Prompt
+	promptWidth := view.PromptWidth
+
+	maxPromptWidth := max(drawableWidth-1, 0)
+	if promptWidth > maxPromptWidth {
+		prompt = ansi.Truncate(prompt, maxPromptWidth, "")
+		promptWidth = ansi.StringWidth(prompt)
+	}
+
+	availableWidth := max(drawableWidth-promptWidth, 1)
+
+	lineRunes := []rune(view.Line)
+	cursor := min(max(view.Cursor, 0), len(lineRunes))
+
+	beforeCursor := string(lineRunes[:cursor])
+	beforeWidth := ansi.StringWidth(beforeCursor)
+
+	removeWidth := max(beforeWidth-availableWidth, 0)
+	visibleBefore := ansi.TruncateLeft(beforeCursor, removeWidth, "")
+
+	visibleBeforeWidth := ansi.StringWidth(visibleBefore)
+	startWidth := beforeWidth - visibleBeforeWidth
+
+	line = ansi.Cut(highlightInput(view.Line), startWidth, startWidth+availableWidth)
+
+	cursorColumn = promptWidth + visibleBeforeWidth
+	return prompt, line, cursorColumn
 }
