@@ -80,21 +80,22 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 	}()
 
 	var (
-		decoder          terminal.Decoder
-		lineEditor       editor.Editor
-		commandHistory   history.History
-		renderer         terminal.Renderer
-		markerScan       = protocol.NewScanner(marker)
-		selected         = -1
-		suggestionMode   bool
-		editing          bool
-		prompt           = colorCyan + "(Gogit)" + colorReset + " "
-		promptWidth      = 8
-		branches         []suggest.Suggestion
-		branchCancel     context.CancelFunc
-		branchGeneration uint64
-		pendingKeys      []terminal.Key
-		pasteState       bracketedPasteState
+		decoder            terminal.Decoder
+		lineEditor         editor.Editor
+		commandHistory     history.History
+		renderer           terminal.Renderer
+		markerScan         = protocol.NewScanner(marker)
+		selected           = -1
+		suggestionMode     bool
+		editing            bool
+		separateNextPrompt bool
+		prompt             = colorCyan + "(Gogit)" + colorReset + " "
+		promptWidth        = 8
+		branches           []suggest.Suggestion
+		branchCancel       context.CancelFunc
+		branchGeneration   uint64
+		pendingKeys        []terminal.Key
+		pasteState         bracketedPasteState
 	)
 	wrapCommand := commandWrapper(func(command string) string { return command })
 	if len(wrappers) > 0 && wrappers[0] != nil {
@@ -299,6 +300,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 				commandHistory.Reset()
 				suggestionMode = false
 				selected = -1
+				separateNextPrompt = true
 				editing = false
 				return false, consumed, nil
 			}
@@ -406,6 +408,13 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 				}
 
 				if len(prompts) > 0 {
+					if separateNextPrompt {
+						if err := writeOutput("\r\n"); err != nil {
+							return false, err
+						}
+						separateNextPrompt = false
+					}
+
 					editing = true
 					lineEditor.Clear()
 					commandHistory.Reset()
