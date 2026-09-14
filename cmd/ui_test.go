@@ -3,6 +3,7 @@ package cmd
 import (
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -109,7 +110,17 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 	}
 
 	assertShellWrite(t, shell.writes, "wrapped(git status)\r")
+
+	if _, err := io.WriteString(shellWriter, "command output\r\n"); err != nil {
+		t.Fatal(err)
+	}
 	writePromptFrame(t, shellWriter, marker)
+
+	waitForOutputContaining(
+		t,
+		stdout,
+		"command output\r\n\r\n",
+	)
 
 	if _, err := stdinWriter.Write([]byte("go test ./...\r\n\x1b[20")); err != nil {
 		t.Fatal(err)
@@ -205,4 +216,33 @@ func assertNoShellWrite(t *testing.T, writes <-chan []byte) {
 		t.Fatalf("unexpected shell write: %q", got)
 	case <-time.After(25 * time.Millisecond):
 	}
+}
+
+func waitForOutputContaining(t *testing.T, output *os.File, want string) {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(output.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if strings.Contains(string(data), want) {
+			return
+		}
+
+		time.Sleep(time.Millisecond)
+	}
+
+	data, err := os.ReadFile(output.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Fatalf(
+		"terminal output does not contain %q: %q",
+		want,
+		data,
+	)
 }
