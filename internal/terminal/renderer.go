@@ -84,7 +84,7 @@ func (r *Renderer) Render(view View) string {
 	output.WriteString(hideCursor)
 	output.WriteString(clearLine)
 	output.WriteString(displayPrompt)
-	output.WriteString(highlightInput(displayLine))
+	output.WriteString(displayLine)
 
 	for index := range rowsToClear {
 		output.WriteString("\r\n\x1b[2K")
@@ -196,7 +196,7 @@ func highlightInput(line string) string {
 
 func inputViewport(view View) (prompt, line string, cursorColumn int) {
 	width := view.Width
-	if width < 0 {
+	if width <= 0 {
 		width = 80
 	}
 
