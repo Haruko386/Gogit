@@ -18,11 +18,7 @@ func Analyze(line string, cursor int) Result {
 
 // AnalyzeWithBranches adds repository branch refs to commands that accept a
 // branch or revision while keeping Analyze deterministic for existing callers.
-func AnalyzeWithBranches(
-	line string,
-	cursor int,
-	branches []Suggestion,
-) Result {
+func AnalyzeWithBranches(line string, cursor int, branches []Suggestion) Result {
 	context, ok := ParseContext(line, cursor)
 	if !ok ||
 		len(context.WordsBefore) == 0 ||
@@ -115,6 +111,21 @@ func acceptsBranch(context Context) bool {
 	case "revert", "cherry-pick":
 		return !containsAny(
 			context.WordsBefore[2:], "--continue", "--skip", "--abort", "--quit")
+	case "bisect":
+		nestedName, nestedIndex, found := findNestedSubcommand(context)
+		if !found {
+			return false
+		}
+
+		if containsAny(context.WordsBefore[nestedIndex+1:], "--") {
+			return false
+		}
+		switch nestedName {
+		case "start", "good", "bad", "new", "old", "skip", "reset":
+			return true
+		default:
+			return false
+		}
 	case "pull", "push":
 		// The first positional argument is the remote; following arguments are
 		// refs or refspecs.

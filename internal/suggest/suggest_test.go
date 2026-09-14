@@ -1205,3 +1205,475 @@ func TestRebaseApplyRootConflictDependsOnOnto(t *testing.T) {
 		})
 	}
 }
+
+func TestSuggestsRepositoryManagementSubcommands(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git worktree ad", want: "add"},
+		{line: "git worktree lis", want: "list"},
+		{line: "git worktree loc", want: "lock"},
+		{line: "git worktree mov", want: "move"},
+		{line: "git worktree pru", want: "prune"},
+		{line: "git worktree rem", want: "remove"},
+		{line: "git worktree rep", want: "repair"},
+		{line: "git worktree unl", want: "unlock"},
+
+		{line: "git submodule ad", want: "add"},
+		{line: "git submodule sta", want: "status"},
+		{line: "git submodule ini", want: "init"},
+		{line: "git submodule dei", want: "deinit"},
+		{line: "git submodule upd", want: "update"},
+		{line: "git submodule set-b", want: "set-branch"},
+		{line: "git submodule set-u", want: "set-url"},
+		{line: "git submodule sum", want: "summary"},
+		{line: "git submodule for", want: "foreach"},
+		{line: "git submodule syn", want: "sync"},
+		{line: "git submodule abs", want: "absorbgitdirs"},
+
+		{line: "git bisect sta", want: "start"},
+		{line: "git bisect goo", want: "good"},
+		{line: "git bisect bad", want: ""},
+		{line: "git bisect ter", want: "terms"},
+		{line: "git bisect ski", want: "skip"},
+		{line: "git bisect nex", want: "next"},
+		{line: "git bisect rese", want: "reset"},
+		{line: "git bisect vis", want: "visualize"},
+		{line: "git bisect repl", want: "replay"},
+		{line: "git bisect log", want: ""},
+		{line: "git bisect run", want: ""},
+		{line: "git bisect new", want: ""},
+		{line: "git bisect old", want: ""},
+		{line: "git bisect vie", want: "view"},
+		{line: "git bisect hel", want: "help"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+
+			if test.want == "" {
+				if len(got) != 0 {
+					t.Fatalf(
+						"Suggest(%q) = %#v, want completed command",
+						test.line,
+						got,
+					)
+				}
+				return
+			}
+
+			if len(got) != 1 || got[0].Value != test.want {
+				t.Fatalf(
+					"Suggest(%q) = %#v, want %q",
+					test.line,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestSuggestsWorktreeOptions(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git worktree add --det", want: "--detach"},
+		{line: "git worktree add --no-ch", want: "--no-checkout"},
+		{line: "git worktree add --orp", want: "--orphan"},
+		{line: "git worktree list --verb", want: "--verbose"},
+		{line: "git worktree list --porc", want: "--porcelain"},
+		{line: "git worktree lock --rea", want: "--reason"},
+		{line: "git worktree prune --dry", want: "--dry-run"},
+		{line: "git worktree prune --exp", want: "--expire"},
+		{line: "git worktree remove --for", want: "--force"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+
+			if len(got) != 1 || got[0].Value != test.want {
+				t.Fatalf(
+					"Suggest(%q) = %#v, want %q",
+					test.line,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestAnalyzeWorktreeValueHints(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git worktree add -b ", want: "branch"},
+		{line: "git worktree add -B ", want: "branch"},
+		{line: "git worktree add --reason ", want: "reason"},
+		{line: "git worktree lock --reason ", want: "reason"},
+		{line: "git worktree prune --expire ", want: "time"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := Analyze(test.line, len([]rune(test.line)))
+
+			if result.Hint == nil {
+				t.Fatalf("Analyze(%q) returned no value hint", test.line)
+			}
+			if result.Hint.Name != test.want {
+				t.Fatalf(
+					"hint name = %q, want %q",
+					result.Hint.Name,
+					test.want,
+				)
+			}
+			if len(result.Suggestions) != 0 {
+				t.Fatalf(
+					"value position returned suggestions: %#v",
+					result.Suggestions,
+				)
+			}
+		})
+	}
+}
+
+func TestWorktreeOptionConflicts(t *testing.T) {
+	tests := []struct {
+		line      string
+		forbidden string
+	}{
+		{
+			line:      "git worktree add --checkout --no-ch",
+			forbidden: "--no-checkout",
+		},
+		{
+			line:      "git worktree add --no-checkout --ch",
+			forbidden: "--checkout",
+		},
+		{
+			line:      "git worktree add -b feature -B",
+			forbidden: "-B",
+		},
+		{
+			line:      "git worktree add -B feature -b",
+			forbidden: "-b",
+		},
+		{
+			line:      "git worktree list --verbose --por",
+			forbidden: "--porcelain",
+		},
+		{
+			line:      "git worktree list --porcelain --ver",
+			forbidden: "--verbose",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+
+			for _, candidate := range got {
+				if candidate.Value == test.forbidden {
+					t.Fatalf(
+						"Suggest(%q) returned conflicting option %q: %#v",
+						test.line,
+						test.forbidden,
+						got,
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestSuggestsSubmoduleOptions(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git submodule --qui", want: "--quiet"},
+		{line: "git submodule add --bran", want: "--branch"},
+		{line: "git submodule add --nam", want: "--name"},
+		{line: "git submodule add --refer", want: "--reference"},
+		{line: "git submodule add --ref-f", want: "--ref-format"},
+		{line: "git submodule add --dep", want: "--depth"},
+		{line: "git submodule status --cac", want: "--cached"},
+		{line: "git submodule status --recur", want: "--recursive"},
+		{line: "git submodule deinit --al", want: "--all"},
+		{line: "git submodule update --ini", want: "--init"},
+		{line: "git submodule update --rem", want: "--remote"},
+		{line: "git submodule update --no-f", want: "--no-fetch"},
+		{line: "git submodule update --check", want: "--checkout"},
+		{line: "git submodule update --mer", want: "--merge"},
+		{line: "git submodule update --reba", want: "--rebase"},
+		{line: "git submodule update --job", want: "--jobs"},
+		{line: "git submodule update --filt", want: "--filter"},
+		{line: "git submodule update --recomm", want: "--recommend-shallow"},
+		{line: "git submodule update --no-s", want: "--no-single-branch"},
+		{line: "git submodule set-branch --def", want: "--default"},
+		{line: "git submodule summary --fil", want: "--files"},
+		{line: "git submodule summary --summary", want: "--summary-limit"},
+		{line: "git submodule foreach --recur", want: "--recursive"},
+		{line: "git submodule sync --recur", want: "--recursive"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+			if len(got) != 1 || got[0].Value != test.want {
+				t.Fatalf(
+					"Suggest(%q) = %#v, want %q",
+					test.line,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestAnalyzeSubmoduleValueHints(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git submodule add --branch ", want: "branch"},
+		{line: "git submodule add --name ", want: "name"},
+		{line: "git submodule add --reference ", want: "repository"},
+		{line: "git submodule add --ref-format ", want: "format"},
+		{line: "git submodule add --depth ", want: "depth"},
+		{line: "git submodule update --jobs ", want: "count"},
+		{line: "git submodule update --filter ", want: "filter"},
+		{line: "git submodule set-branch --branch ", want: "branch"},
+		{line: "git submodule summary --summary-limit ", want: "count"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := Analyze(test.line, len([]rune(test.line)))
+			if result.Hint == nil {
+				t.Fatalf("Analyze(%q) returned no value hint", test.line)
+			}
+			if result.Hint.Name != test.want {
+				t.Fatalf(
+					"hint name = %q, want %q",
+					result.Hint.Name,
+					test.want,
+				)
+			}
+			if len(result.Suggestions) != 0 {
+				t.Fatalf(
+					"value position returned suggestions: %#v",
+					result.Suggestions,
+				)
+			}
+		})
+	}
+}
+
+func TestSubmoduleOptionConflicts(t *testing.T) {
+	tests := []struct {
+		line      string
+		forbidden string
+	}{
+		{
+			line:      "git submodule update --checkout --mer",
+			forbidden: "--merge",
+		},
+		{
+			line:      "git submodule update --merge --reba",
+			forbidden: "--rebase",
+		},
+		{
+			line:      "git submodule update --rebase --check",
+			forbidden: "--checkout",
+		},
+		{
+			line:      "git submodule update --recommend-shallow --no-rec",
+			forbidden: "--no-recommend-shallow",
+		},
+		{
+			line:      "git submodule update --single-branch --no-s",
+			forbidden: "--no-single-branch",
+		},
+		{
+			line:      "git submodule set-branch --default --bran",
+			forbidden: "--branch",
+		},
+		{
+			line:      "git submodule summary --cached --fil",
+			forbidden: "--files",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+			for _, candidate := range got {
+				if candidate.Value == test.forbidden {
+					t.Fatalf(
+						"Suggest(%q) returned conflicting option %q: %#v",
+						test.line,
+						test.forbidden,
+						got,
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestSuggestsBisectOptions(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git bisect start --no-c", want: "--no-checkout"},
+		{line: "git bisect start --first", want: "--first-parent"},
+		{line: "git bisect start --term-b", want: "--term-bad"},
+		{line: "git bisect start --term-n", want: "--term-new"},
+		{line: "git bisect start --term-g", want: "--term-good"},
+		{line: "git bisect start --term-o", want: "--term-old"},
+		{line: "git bisect terms --term-g", want: "--term-good"},
+		{line: "git bisect terms --term-n", want: "--term-new"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+			if len(got) != 1 || got[0].Value != test.want {
+				t.Fatalf(
+					"Suggest(%q) = %#v, want %q",
+					test.line,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestAnalyzeBisectTermValueHints(t *testing.T) {
+	for _, line := range []string{
+		"git bisect start --term-bad ",
+		"git bisect start --term-new ",
+		"git bisect start --term-good ",
+		"git bisect start --term-old ",
+	} {
+		t.Run(line, func(t *testing.T) {
+			result := Analyze(line, len([]rune(line)))
+			if result.Hint == nil {
+				t.Fatalf("Analyze(%q) returned no value hint", line)
+			}
+			if result.Hint.Name != "term" {
+				t.Fatalf(
+					"hint name = %q, want %q",
+					result.Hint.Name,
+					"term",
+				)
+			}
+		})
+	}
+}
+
+func TestBisectTermOptionsConflict(t *testing.T) {
+	tests := []struct {
+		line      string
+		forbidden string
+	}{
+		{
+			line:      "git bisect start --term-bad broken --term-n",
+			forbidden: "--term-new",
+		},
+		{
+			line:      "git bisect start --term-old working --term-g",
+			forbidden: "--term-good",
+		},
+		{
+			line:      "git bisect terms --term-good --term-b",
+			forbidden: "--term-bad",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+			for _, candidate := range got {
+				if candidate.Value == test.forbidden {
+					t.Fatalf(
+						"Suggest(%q) returned conflicting option %q: %#v",
+						test.line,
+						test.forbidden,
+						got,
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestAnalyzeSuggestsBranchesForBisectRevisions(t *testing.T) {
+	branches := []Suggestion{
+		{Value: "main", Kind: KindBranch},
+		{Value: "feature/login", Kind: KindBranch},
+	}
+
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git bisect start ma", want: "main"},
+		{line: "git bisect good fe", want: "feature/login"},
+		{line: "git bisect bad ma", want: "main"},
+		{line: "git bisect new ma", want: "main"},
+		{line: "git bisect old fe", want: "feature/login"},
+		{line: "git bisect skip ma", want: "main"},
+		{line: "git bisect reset ma", want: "main"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := AnalyzeWithBranches(
+				test.line,
+				len([]rune(test.line)),
+				branches,
+			)
+
+			if len(result.Suggestions) != 1 ||
+				result.Suggestions[0].Value != test.want {
+				t.Fatalf(
+					"AnalyzeWithBranches(%q) = %#v, want %q",
+					test.line,
+					result.Suggestions,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestBisectPathspecDoesNotSuggestBranches(t *testing.T) {
+	line := "git bisect start main dev -- ma"
+	branches := []Suggestion{{Value: "main", Kind: KindBranch}}
+
+	result := AnalyzeWithBranches(
+		line,
+		len([]rune(line)),
+		branches,
+	)
+
+	if len(result.Suggestions) != 0 {
+		t.Fatalf(
+			"AnalyzeWithBranches(%q) = %#v, want no branches after --",
+			line,
+			result.Suggestions,
+		)
+	}
+}
