@@ -1938,7 +1938,6 @@ func TestAnalyzeSuggestsBranchesForInspectionCommands(t *testing.T) {
 		})
 	}
 }
-
 func TestAnalyzeSuggestsRepositoryRemotes(t *testing.T) {
 	repository := RepositoryCandidates{
 		Branches: []Suggestion{{Value: "main", Kind: KindBranch}},

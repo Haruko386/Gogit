@@ -13,98 +13,48 @@
 [![Typing SVG](https://readme-typing-svg.demolab.com?font=JetBrains+Mono&size=22&duration=4500&pause=1400&color=728295&center=true&vCenter=true&repeat=false&width=435&lines=Git+is+easy+until+you+use+it+%3A%28)](https://git.io/typing-svg)
 </div>
 
-### Imagine this:
+### A little story:
 
-You just started your first internship as a developer.
+> You are an internal in a company, this is your first work since you are an adult.
+>
+> **First day**, you boss told you to `Clone` the company's project from **GitHub** and get familiar with it.
+> You know how to do it, just type:
+> `git clone ...`
+> 
+> **Next day**, you need to submit some `feat` or `fix` **PR** to the upstream branch. Still ok:
+> `git checkout -b feat/something`
+> 
+> **Few days later**, your boos walks over:
+> A contributor's **PR** have conflict, you need to review his code and give him a `suggestion` to resolve the conflict.
+> 
+> Usually, on your local and your own branch, you just type: `git checkout branch` → `git pull upstream main --rebase` → `resolve the conflict in local` and `git push --force-with-lease origin branch`
+> 
+> But in this way, you found there are **two conflict**, but in GitHub, there should be only **one conflict** ???
+> 
+> Finally, you [**Boss**](https://github.com/JinHai-CN) told you how to do it **right**:
 
-#### Day one:
+```shell
+git remote add whhe git@github.com:whhe/ragflow
+git fetch whhe
+git checkout upstream/main
+git merge whhe/feat-bedrock-api-key-auth
+```
+
+> Like dude, what fk is this bro?
+
+This was basically my experience while interning on **[infiniflow/ragflow](https://github.com/infiniflow/ragflow)**.
+And that **PR review** is [**here**](https://github.com/infiniflow/ragflow/pull/18301#pullrequestreview-4992126462)
+
+To be honest, I only know 
 
 ```bash
 git clone ...
-```
-
-Easy.
-
----
-
-#### Day two:
-
-```bash
-git checkout -b feat/something
-```
-
-Still easy.
-
----
-
-#### Then one day, your mentor walks over:
-
-> "Main has moved forward. Rebase your commits onto the latest main,  
-> resolve the conflicts, and update your remote branch safely."
-
-You:
-
-> "Sure."
-
-Your brain:
-
-> **What the hell is a rebase?**
-
-So you search Google, Stack Overflow, GitHub — or just ask **`ChatGPT`**.
-
-A minute later, you somehow end up with:
-
-```bash
-git fetch origin
-git rebase origin/main
-
-# resolve conflicts...
-
 git add .
-git rebase --continue
-git push --force-with-lease
+git commit -m ""
+git push # I like to use `--force`, although I know the consequence :)
 ```
 
-It works!!!
-
-For a brief moment, you think you understand Git.
-
-----
-
-#### Until the next day:
-
-> "Remove yesterday's commit, but keep the changes in your working tree."
-
-You stare at the terminal.
-
-```bash
-git reset ???
-```
-
-`--soft`? `--mixed`? `--hard`?
-
-And somehow you're back to searching:
-
-> **difference between git reset soft mixed hard**
-
----
-
-This was basically my experience while interning on **[infiniflow/ragflow](https://github.com/infiniflow/ragflow)**.
-
-Git doesn't have a shortage of commands.  
-If anything, it has **way too many of them**.
-
-Usually, the problem isn't:
-
-> "I don't know what I want to do."
-
-It's:
-
-> "I know exactly what I want to do.  
-> I just don't know what that damn Git command is called."
-
-So I built **Gogit** — because memorizing Git commands shouldn't be part of the job.
-At least not for a beginner
+before my internship in [**Infiniflow**](https://github.com/infiniflow)
 
 ---
 
@@ -181,102 +131,6 @@ gogit
 This opens the Gogit-assisted shell. Type Git commands normally and press
 `Ctrl+D` on an empty input line when you want to leave Gogit.
 
-It simply tries to help when you're staring at this:
-
-```bash
-git branch --sho|
-```
-
-and wondering what comes next.
-
-Gogit is planned to suggest:
-
-```text
---show-current
-    Print the name of the current branch.
-```
-
-Press `Enter`:
-
-```bash
-git branch --show-current
-```
-
-Done.
-
-No need to:
-
-1. open a browser
-2. search the Git documentation
-3. open Stack Overflow
-4. ask an AI
-5. copy an answer written in 2014
-6. pray it doesn't delete your working tree
-
-The goal is to turn this:
-
-```text
-I know what I want to do
-          ↓
-       git ...
-          ↓
-    Gogit helps
-          ↓
-         Done
-```
-
-instead of this:
-
-```text
-I know what I want to do
-          ↓
-       Google
-          ↓
-   Stack Overflow
-          ↓
-          AI
-          ↓
-  git reset --hard
-          ↓
-    Wait... WHAT?
-```
-
----
-
-## The Idea
-
-The planned autocomplete will understand the current Git command context
-and suggest available options while you type.
-
-For example:
-
-```bash
-git branch --
-```
-
-Gogit may show:
-
-```text
---show-current
-    Show the name of the current branch.
-
---merged
-    List branches already merged into the specified commit.
-
---no-merged
-    List branches that have not yet been merged.
-
---delete
-    Delete a branch.
-```
-
-So instead of only telling you:
-
-> **what you can type**
-
-Gogit also tells you:
-
-> **what the hell it actually does**
 
 For dangerous commands, Gogit should eventually be able to tell you
 that you're about to do something... interesting:
@@ -300,29 +154,7 @@ is not helping you type:
 git reset --hard
 ```
 
-faster.
-
 It's stopping you for half a second before you do it.
-
----
-
-<div align="center"><h1><b>Why "Gogit"?</b></h1></div>
-
-Because it's written in **Go**.
-
-And it's for **Git**.
-
-Go + Git.
-
-**Gogit.**
-
-Yes.
-
-I spent considerably more time Googling Git commands than naming this project.
-
----
-
-
 
 > [!important]
 > If you use **agent** to operate git, bro, this is not what you need.
