@@ -96,7 +96,7 @@ func acceptsBranch(context Context) bool {
 			context.WordsBefore[2:],
 			"-b", "-B", "--orphan",
 		)
-	case "merge", "reset", "log", "diff":
+	case "merge", "reset", "log", "diff", "show", "blame", "shortlog", "describe":
 		return true
 	case "rebase":
 		return !containsAny(
@@ -122,6 +122,18 @@ func acceptsBranch(context Context) bool {
 		}
 		switch nestedName {
 		case "start", "good", "bad", "new", "old", "skip", "reset":
+			return true
+		default:
+			return false
+		}
+	case "reflog":
+		nestedName, _, found := findNestedSubcommand(context)
+		if !found {
+			return false
+		}
+
+		switch nestedName {
+		case "show", "exists", "delete", "drop", "expire":
 			return true
 		default:
 			return false

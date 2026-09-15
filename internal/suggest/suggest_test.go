@@ -1677,3 +1677,264 @@ func TestBisectPathspecDoesNotSuggestBranches(t *testing.T) {
 		)
 	}
 }
+
+func TestSuggestsInspectionCommands(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git bla", want: "blame"},
+		{line: "git gre", want: "grep"},
+		{line: "git short", want: "shortlog"},
+		{line: "git des", want: "describe"},
+		{line: "git refl", want: "reflog"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+			if len(got) != 1 || got[0].Value != test.want {
+				t.Fatalf(
+					"Suggest(%q) = %#v, want %q",
+					test.line,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestSuggestsAmbiguousInspectionPrefix(t *testing.T) {
+	got := Suggest("git sho", len([]rune("git sho")))
+	want := []string{"show", "shortlog"}
+
+	if len(got) != len(want) {
+		t.Fatalf(
+			"Suggest(%q) returned %d candidates, want %d: %#v",
+			"git sho",
+			len(got),
+			len(want),
+			got,
+		)
+	}
+
+	for index, value := range want {
+		if got[index].Value != value {
+			t.Fatalf(
+				"candidate %d = %q, want %q",
+				index,
+				got[index].Value,
+				value,
+			)
+		}
+	}
+}
+
+func TestSuggestsReflogSubcommands(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git reflog sho", want: "show"},
+		{line: "git reflog lis", want: "list"},
+		{line: "git reflog exi", want: "exists"},
+		{line: "git reflog wri", want: "write"},
+		{line: "git reflog del", want: "delete"},
+		{line: "git reflog dro", want: "drop"},
+		{line: "git reflog exp", want: "expire"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+			if len(got) != 1 || got[0].Value != test.want {
+				t.Fatalf(
+					"Suggest(%q) = %#v, want %q",
+					test.line,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestSuggestsInspectionOptions(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git show --stat", want: ""},
+		{line: "git show --name-st", want: "--name-status"},
+		{line: "git show --show-s", want: "--show-signature"},
+		{line: "git blame --line-p", want: "--line-porcelain"},
+		{line: "git blame --color-b", want: "--color-by-age"},
+		{line: "git grep --fixed", want: "--fixed-strings"},
+		{line: "git grep --perl", want: "--perl-regexp"},
+		{line: "git grep --before", want: "--before-context"},
+		{line: "git grep --max-d", want: "--max-depth"},
+		{line: "git shortlog --comm", want: "--committer"},
+		{line: "git shortlog --numb", want: "--numbered"},
+		{line: "git shortlog --summ", want: "--summary"},
+		{line: "git describe --cand", want: "--candidates"},
+		{line: "git describe --exact", want: "--exact-match"},
+		{line: "git describe --first", want: "--first-parent"},
+		{line: "git reflog show --date", want: ""},
+		{line: "git reflog delete --dry", want: "--dry-run"},
+		{line: "git reflog drop --single", want: "--single-worktree"},
+		{line: "git reflog expire --expire-u", want: "--expire-unreachable"},
+		{line: "git reflog expire --stale", want: "--stale-fix"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+
+			if test.want == "" {
+				if len(got) != 0 {
+					t.Fatalf(
+						"Suggest(%q) = %#v, want completed option",
+						test.line,
+						got,
+					)
+				}
+				return
+			}
+
+			if len(got) != 1 || got[0].Value != test.want {
+				t.Fatalf(
+					"Suggest(%q) = %#v, want %q",
+					test.line,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestAnalyzeInspectionValueHints(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git show --format ", want: "format"},
+		{line: "git blame --ignore-rev ", want: "revision"},
+		{line: "git blame --contents ", want: "file"},
+		{line: "git blame -L ", want: "range"},
+		{line: "git grep --context ", want: "lines"},
+		{line: "git grep -e ", want: "pattern"},
+		{line: "git grep -f ", want: "file"},
+		{line: "git shortlog --group ", want: "field"},
+		{line: "git describe --abbrev ", want: "length"},
+		{line: "git describe --match ", want: "pattern"},
+		{line: "git reflog show --date ", want: "format"},
+		{line: "git reflog expire --expire ", want: "time"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := Analyze(test.line, len([]rune(test.line)))
+			if result.Hint == nil {
+				t.Fatalf("Analyze(%q) returned no value hint", test.line)
+			}
+			if result.Hint.Name != test.want {
+				t.Fatalf(
+					"hint name = %q, want %q",
+					result.Hint.Name,
+					test.want,
+				)
+			}
+			if len(result.Suggestions) != 0 {
+				t.Fatalf(
+					"value position returned suggestions: %#v",
+					result.Suggestions,
+				)
+			}
+		})
+	}
+}
+
+func TestInspectionOptionConflicts(t *testing.T) {
+	tests := []struct {
+		line      string
+		forbidden string
+	}{
+		{
+			line:      "git show --patch --no-p",
+			forbidden: "--no-patch",
+		},
+		{
+			line:      "git show --name-only --name-st",
+			forbidden: "--name-status",
+		},
+		{
+			line:      "git blame --porcelain --line-p",
+			forbidden: "--line-porcelain",
+		},
+		{
+			line:      "git grep --fixed-strings --perl",
+			forbidden: "--perl-regexp",
+		},
+		{
+			line:      "git grep --no-index --cac",
+			forbidden: "--cached",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			got := Suggest(test.line, len([]rune(test.line)))
+			for _, candidate := range got {
+				if candidate.Value == test.forbidden {
+					t.Fatalf(
+						"Suggest(%q) returned conflicting option %q: %#v",
+						test.line,
+						test.forbidden,
+						got,
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestAnalyzeSuggestsBranchesForInspectionCommands(t *testing.T) {
+	branches := []Suggestion{
+		{Value: "main", Kind: KindBranch},
+		{Value: "feature/login", Kind: KindBranch},
+	}
+
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git show ma", want: "main"},
+		{line: "git blame fe", want: "feature/login"},
+		{line: "git shortlog ma", want: "main"},
+		{line: "git describe fe", want: "feature/login"},
+		{line: "git reflog show ma", want: "main"},
+		{line: "git reflog exists fe", want: "feature/login"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := AnalyzeWithBranches(
+				test.line,
+				len([]rune(test.line)),
+				branches,
+			)
+
+			if len(result.Suggestions) != 1 ||
+				result.Suggestions[0].Value != test.want {
+				t.Fatalf(
+					"AnalyzeWithBranches(%q) = %#v, want %q",
+					test.line,
+					result.Suggestions,
+					test.want,
+				)
+			}
+		})
+	}
+}
