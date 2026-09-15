@@ -1938,3 +1938,120 @@ func TestAnalyzeSuggestsBranchesForInspectionCommands(t *testing.T) {
 		})
 	}
 }
+
+func TestAnalyzeSuggestsRepositoryRemotes(t *testing.T) {
+	repository := RepositoryCandidates{
+		Branches: []Suggestion{{Value: "main", Kind: KindBranch}},
+		Remotes: []Suggestion{
+			{Value: "origin", Kind: KindRemote},
+			{Value: "upstream", Kind: KindRemote},
+		},
+	}
+
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git fetch ori", want: "origin"},
+		{line: "git pull ups", want: "upstream"},
+		{line: "git push ori", want: "origin"},
+		{line: "git remote remove ori", want: "origin"},
+		{line: "git remote rename ups", want: "upstream"},
+		{line: "git remote show ori", want: "origin"},
+		{line: "git remote prune ups", want: "upstream"},
+		{line: "git remote set-url --add ori", want: "origin"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := AnalyzeWithRepository(
+				test.line,
+				len([]rune(test.line)),
+				repository,
+			)
+			if len(result.Suggestions) != 1 || result.Suggestions[0].Value != test.want {
+				t.Fatalf(
+					"AnalyzeWithRepository(%q) = %#v, want %q",
+					test.line,
+					result.Suggestions,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestAnalyzeSuggestsRepositoryTags(t *testing.T) {
+	repository := RepositoryCandidates{
+		Branches: []Suggestion{{Value: "main", Kind: KindBranch}},
+		Tags: []Suggestion{
+			{Value: "v1.0.0", Kind: KindTag},
+			{Value: "v2.0.0", Kind: KindTag},
+		},
+	}
+
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: "git tag --delete v1", want: "v1.0.0"},
+		{line: "git tag --verify v2", want: "v2.0.0"},
+		{line: "git show v1", want: "v1.0.0"},
+		{line: "git describe v2", want: "v2.0.0"},
+		{line: "git checkout v1", want: "v1.0.0"},
+		{line: "git switch --detach v2", want: "v2.0.0"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := AnalyzeWithRepository(
+				test.line,
+				len([]rune(test.line)),
+				repository,
+			)
+			if len(result.Suggestions) != 1 || result.Suggestions[0].Value != test.want {
+				t.Fatalf(
+					"AnalyzeWithRepository(%q) = %#v, want %q",
+					test.line,
+					result.Suggestions,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestAnalyzeDoesNotSuggestExistingNamesForCreation(t *testing.T) {
+	repository := RepositoryCandidates{
+		Remotes: []Suggestion{{Value: "origin", Kind: KindRemote}},
+		Tags:    []Suggestion{{Value: "v1.0.0", Kind: KindTag}},
+	}
+
+	for _, line := range []string{
+		"git remote add ori",
+		"git tag v1",
+	} {
+		t.Run(line, func(t *testing.T) {
+			result := AnalyzeWithRepository(line, len([]rune(line)), repository)
+			if len(result.Suggestions) != 0 {
+				t.Fatalf(
+					"AnalyzeWithRepository(%q) = %#v, want no existing names",
+					line,
+					result.Suggestions,
+				)
+			}
+		})
+	}
+}
+
+func TestAnalyzeSwitchOnlySuggestsTagsWhenDetached(t *testing.T) {
+	repository := RepositoryCandidates{
+		Tags: []Suggestion{{Value: "v1.0.0", Kind: KindTag}},
+	}
+
+	line := "git switch v1"
+	result := AnalyzeWithRepository(line, len([]rune(line)), repository)
+	if len(result.Suggestions) != 0 {
+		t.Fatalf("normal switch suggested tags: %#v", result.Suggestions)
+	}
+}

@@ -13,12 +13,31 @@ func Suggest(line string, cursor int) []Suggestion {
 // Analyze returns insertable completions and, when applicable, a display-only
 // explanation of the value expected by the preceding option.
 func Analyze(line string, cursor int) Result {
-	return AnalyzeWithBranches(line, cursor, nil)
+	return AnalyzeWithRepository(
+		line,
+		cursor,
+		RepositoryCandidates{},
+	)
 }
 
 // AnalyzeWithBranches adds repository branch refs to commands that accept a
 // branch or revision while keeping Analyze deterministic for existing callers.
 func AnalyzeWithBranches(line string, cursor int, branches []Suggestion) Result {
+	return AnalyzeWithRepository(
+		line,
+		cursor,
+		RepositoryCandidates{
+			Branches: branches,
+		},
+	)
+}
+
+// AnalyzeWithRepository adds dynamic values from the current repository.
+func AnalyzeWithRepository(
+	line string,
+	cursor int,
+	repository RepositoryCandidates,
+) Result {
 	context, ok := ParseContext(line, cursor)
 	if !ok ||
 		len(context.WordsBefore) == 0 ||
@@ -49,10 +68,17 @@ func AnalyzeWithBranches(line string, cursor int, branches []Suggestion) Result 
 			),
 		}
 	}
-	if acceptsBranch(context) {
-		return Result{Suggestions: matching(
-			branches, context.Prefix, nil,
-		)}
+	if candidates, accepted := repositorySuggestions(
+		context,
+		repository,
+	); accepted {
+		return Result{
+			Suggestions: matching(
+				candidates,
+				context.Prefix,
+				nil,
+			),
+		}
 	}
 
 	optionKey := context.WordsBefore[1]
@@ -77,6 +103,141 @@ func AnalyzeWithBranches(line string, cursor int, branches []Suggestion) Result 
 	return Result{Suggestions: matching(
 		options, context.Prefix, used,
 	)}
+}
+
+func repositorySuggestions(context Context, repository RepositoryCandidates) ([]Suggestion, bool) {
+	if acceptsRemote(context) {
+		return repository.Remotes, true
+	}
+
+	acceptsBranches := acceptsBranch(context)
+	acceptsTags := acceptsTag(context)
+
+	switch {
+	case acceptsBranches && acceptsTags:
+		return combineSuggestions(
+			repository.Branches,
+			repository.Tags,
+		), true
+	case acceptsBranches:
+		return repository.Branches, true
+	case acceptsTags:
+		return repository.Tags, true
+	default:
+		return nil, false
+	}
+}
+
+func combineSuggestions(groups ...[]Suggestion) []Suggestion {
+	total := 0
+	for _, group := range groups {
+		total += len(group)
+	}
+
+	combined := make([]Suggestion, 0, total)
+	seen := make(map[string]struct{}, total)
+
+	for _, group := range groups {
+		for _, candidate := range group {
+			if _, exists := seen[candidate.Value]; exists {
+				continue
+			}
+
+			seen[candidate.Value] = struct{}{}
+			combined = append(combined, candidate)
+		}
+	}
+
+	return combined
+}
+
+func acceptsRemote(context Context) bool {
+	if context.Prefix == "" || strings.HasPrefix(context.Prefix, "-") {
+		return false
+	}
+
+	command := context.WordsBefore[1]
+	switch command {
+	case "fetch", "pull", "push":
+		return positionalCount(
+			context.WordsBefore[2:],
+			gitOptions[command],
+		) == 0
+	case "remote":
+		nestedName, nestedIndex, found := findNestedSubcommand(context)
+		if !found {
+			return false
+		}
+
+		positionals := positionalCount(
+			context.WordsBefore[nestedIndex+1:],
+			gitOptions["remote "+nestedName],
+		)
+
+		switch nestedName {
+		case "rename", "remove", "set-head", "set-branches",
+			"get-url", "set-url", "show", "prune":
+			return positionals == 0
+		case "update":
+			return true
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+func acceptsTag(context Context) bool {
+	if context.Prefix == "" || strings.HasPrefix(context.Prefix, "-") {
+		return false
+	}
+
+	command := context.WordsBefore[1]
+	switch command {
+	case "tag":
+		return containsAny(
+			context.WordsBefore[2:],
+			"--delete", "-d", "--verify", "-v",
+		)
+	case "switch":
+		return containsAny(context.WordsBefore[2:], "--detach")
+	case "reflog":
+		return false
+	default:
+		return acceptsBranch(context)
+	}
+}
+
+func positionalCount(words []string, options []Suggestion) int {
+	count := 0
+	afterSeparator := false
+
+	for index := 0; index < len(words); index++ {
+		word := words[index]
+
+		if afterSeparator {
+			count++
+			continue
+		}
+		if word == "--" {
+			afterSeparator = true
+			continue
+		}
+
+		name, _, hasEquals := strings.Cut(word, "=")
+		if strings.HasPrefix(name, "-") {
+			option, found := findOption(options, name)
+			if found && option.TakesValue && !hasEquals && index+1 < len(words) {
+				index++
+			}
+			continue
+		}
+
+		count++
+	}
+
+	return count
 }
 
 func acceptsBranch(context Context) bool {
@@ -138,10 +299,13 @@ func acceptsBranch(context Context) bool {
 		default:
 			return false
 		}
-	case "pull", "push":
+	case "fetch", "pull", "push":
 		// The first positional argument is the remote; following arguments are
 		// refs or refspecs.
-		return len(context.WordsBefore) >= 3
+		return positionalCount(
+			context.WordsBefore[2:],
+			gitOptions[command],
+		) >= 1
 	default:
 		return false
 	}

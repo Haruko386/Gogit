@@ -31,9 +31,9 @@ type streamEvent struct {
 	err  error
 }
 
-type branchLoadResult struct {
+type repositoryLoadResult struct {
 	generation uint64
-	branches   []suggest.Suggestion
+	candidates suggest.RepositoryCandidates
 }
 
 type commandWrapper func(string) string
@@ -73,60 +73,60 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 	inputEvents := readStream(os.Stdin)
 	outputEvents := readStream(shellSession)
 	shellDone := make(chan error, 1)
-	branchResults := make(chan branchLoadResult, 1)
+	repositoryResults := make(chan repositoryLoadResult, 1)
 
 	go func() {
 		shellDone <- shellSession.Wait()
 	}()
 
 	var (
-		decoder            terminal.Decoder
-		lineEditor         editor.Editor
-		commandHistory     history.History
-		renderer           terminal.Renderer
-		markerScan         = protocol.NewScanner(marker)
-		selected           = -1
-		suggestionMode     bool
-		editing            bool
-		separateNextPrompt bool
-		prompt             = colorCyan + "(Gogit)" + colorReset + " "
-		promptWidth        = 8
-		branches           []suggest.Suggestion
-		branchCancel       context.CancelFunc
-		branchGeneration   uint64
-		pendingKeys        []terminal.Key
-		pasteState         bracketedPasteState
+		decoder              terminal.Decoder
+		lineEditor           editor.Editor
+		commandHistory       history.History
+		renderer             terminal.Renderer
+		markerScan           = protocol.NewScanner(marker)
+		selected             = -1
+		suggestionMode       bool
+		editing              bool
+		separateNextPrompt   bool
+		prompt               = colorCyan + "(Gogit)" + colorReset + " "
+		promptWidth          = 8
+		repository           suggest.RepositoryCandidates
+		repositoryCancel     context.CancelFunc
+		repositoryGeneration uint64
+		pendingKeys          []terminal.Key
+		pasteState           bracketedPasteState
 	)
 	wrapCommand := commandWrapper(func(command string) string { return command })
 	if len(wrappers) > 0 && wrappers[0] != nil {
 		wrapCommand = wrappers[0]
 	}
 	defer func() {
-		if branchCancel != nil {
-			branchCancel()
+		if repositoryCancel != nil {
+			repositoryCancel()
 		}
 	}()
 
-	loadBranches := func(directory string) {
-		if branchCancel != nil {
-			branchCancel()
+	loadRepository := func(directory string) {
+		if repositoryCancel != nil {
+			repositoryCancel()
 		}
 
-		branchGeneration++
-		generation := branchGeneration
-		branches = nil
+		repositoryGeneration++
+		generation := repositoryGeneration
+		repository = suggest.RepositoryCandidates{}
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		branchCancel = cancel
+		repositoryCancel = cancel
 
 		go func() {
 			defer cancel()
 
-			loaded, _ := suggest.LoadBranches(ctx, directory)
+			loaded, _ := suggest.LoadRepositoryCandidates(ctx, directory)
 			select {
-			case branchResults <- branchLoadResult{
+			case repositoryResults <- repositoryLoadResult{
 				generation: generation,
-				branches:   loaded,
+				candidates: loaded,
 			}:
 			case <-ctx.Done():
 			}
@@ -134,10 +134,10 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 	}
 
 	analyze := func() suggest.Result {
-		return suggest.AnalyzeWithBranches(
+		return suggest.AnalyzeWithRepository(
 			lineEditor.Line(),
 			lineEditor.Cursor(),
-			branches,
+			repository,
 		)
 	}
 
@@ -392,7 +392,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 					prompt, promptWidth = formatPrompt(
 						prompts[len(prompts)-1],
 					)
-					loadBranches(prompts[len(prompts)-1].Directory)
+					loadRepository(prompts[len(prompts)-1].Directory)
 				}
 
 				if len(visible) > 0 && editing {
@@ -461,11 +461,11 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 		case err := <-shellDone:
 			return false, err
 
-		case result := <-branchResults:
-			if result.generation != branchGeneration {
+		case result := <-repositoryResults:
+			if result.generation != repositoryGeneration {
 				continue
 			}
-			branches = result.branches
+			repository = result.candidates
 			if editing && lineEditor.Line() != "" {
 				if err := render(); err != nil {
 					return false, err
