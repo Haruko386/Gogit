@@ -7,6 +7,8 @@ const (
 	KindSubcommand Kind = "subcommand"
 	KindOption     Kind = "option"
 	KindBranch     Kind = "branch"
+	KindRemote     Kind = "remote"
+	KindTag        Kind = "tag"
 )
 
 // Suggestion is one value Gogit can insert into the current token.
@@ -33,6 +35,14 @@ type ValueHint struct {
 type Result struct {
 	Suggestions []Suggestion
 	Hint        *ValueHint
+}
+
+// RepositoryCandidates contains dynamic values loaded from the current
+// repository. Empty groups are valid when the directory is not a repository.
+type RepositoryCandidates struct {
+	Branches []Suggestion
+	Remotes  []Suggestion
+	Tags     []Suggestion
 }
 
 // Context describes the token under the cursor. All offsets are rune indexes.

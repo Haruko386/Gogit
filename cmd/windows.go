@@ -6,9 +6,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/Haruko386/Gogit/internal/protocol"
 )
+
+func quoteCommandArgument(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
 
 func systemShell(marker string) (*exec.Cmd, commandWrapper, func(), error) {
 	script := powershellInitScript(marker)
