@@ -33,11 +33,7 @@ func AnalyzeWithBranches(line string, cursor int, branches []Suggestion) Result 
 }
 
 // AnalyzeWithRepository adds dynamic values from the current repository.
-func AnalyzeWithRepository(
-	line string,
-	cursor int,
-	repository RepositoryCandidates,
-) Result {
+func AnalyzeWithRepository(line string, cursor int, repository RepositoryCandidates) Result {
 	context, ok := ParseContext(line, cursor)
 	if !ok ||
 		len(context.WordsBefore) == 0 ||
@@ -56,25 +52,10 @@ func AnalyzeWithRepository(
 	if subcommands, ok := gitNestedSubcommands[context.WordsBefore[1]]; ok &&
 		!hasNested &&
 		!strings.HasPrefix(context.Prefix, "-") &&
-		onlyKnownOptions(
-			context.WordsBefore[2:],
-			gitOptions[context.WordsBefore[1]],
-		) {
+		onlyKnownOptions(context.WordsBefore[2:], gitOptions[context.WordsBefore[1]]) {
 		return Result{
 			Suggestions: matching(
 				subcommands,
-				context.Prefix,
-				nil,
-			),
-		}
-	}
-	if candidates, accepted := repositorySuggestions(
-		context,
-		repository,
-	); accepted {
-		return Result{
-			Suggestions: matching(
-				candidates,
 				context.Prefix,
 				nil,
 			),
@@ -89,13 +70,25 @@ func AnalyzeWithRepository(
 	}
 
 	options, ok := gitOptions[optionKey]
-	if !ok {
-		return Result{}
+	if ok {
+		words, atBoundary := commandWords(line, cursor)
+		if hint := expectedValueHint(words, atBoundary, options); hint != nil {
+			return Result{Hint: hint}
+		}
 	}
 
-	words, atBoundary := commandWords(line, cursor)
-	if hint := expectedValueHint(words, atBoundary, options); hint != nil {
-		return Result{Hint: hint}
+	if candidates, accepted := repositorySuggestions(context, repository); accepted {
+		return Result{
+			Suggestions: matching(
+				candidates,
+				context.Prefix,
+				nil,
+			),
+		}
+	}
+
+	if !ok {
+		return Result{}
 	}
 
 	used := usedOptions(context.WordsBefore[optionStart:], options)

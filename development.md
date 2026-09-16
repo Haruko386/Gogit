@@ -1,20 +1,20 @@
 # Gogit 后续开发计划
 
-更新时间：2026-09-11
+更新时间：2026-09-15
 
 本文档记录 Gogit 当前已经实现的能力、仍然存在的限制、后续优先级与验收标准。状态以当前代码为准；完成功能应同时具备实现和相应测试，不能只更新目录数据。
 
 ## 当前进度概览
 
-- 核心 MVP：约 70%。
-- Git 辅助核心能力（P1）：约 50%。
-- 面向正式发布的整体完成度：约 45%～50%。
+- 核心 MVP：约 80%。
+- Git 辅助核心能力（P1）：约 70%。
+- 面向正式发布的整体完成度：约 60%。
 - P0 Prompt 协议恢复：已完成。
 - P1 静态命令、参数元数据和分支候选：进行中。
 - P2 编辑体验、历史持久化和配置：大部分待实现。
 - P3 跨平台 CI 与 Release workflow：已建立，完整端到端验收和发布体验仍待补齐。
 
-当前版本已经具备持久 PTY Shell、基础行编辑、会话内历史、Git 静态候选、Tab 补全、参数值提示、本地与远程跟踪分支候选、多行粘贴、Unicode 终端宽度处理，以及包含虚拟环境和当前目录的动态 Prompt。
+当前版本已经具备持久 PTY Shell、基础行编辑、会话内历史、Git 静态候选、Tab 补全、参数值提示、本地与远程跟踪分支候选、多行粘贴、Unicode 终端宽度处理、长命令水平视口、命令间空行，以及包含虚拟环境和当前目录的动态 Prompt。
 
 Windows 使用 PowerShell；Linux 和 macOS 支持 Bash、Zsh 与 POSIX sh，并在安装 Gogit Prompt 前加载用户 Shell 配置。普通命令和前台交互程序运行期间，输入直接交给 PTY，Gogit 只在自己的编辑状态下处理补全和行编辑。
 
@@ -39,31 +39,37 @@ Windows 使用 PowerShell；Linux 和 macOS 支持 Bash、Zsh 与 POSIX sh，并
 
 ### 2. 静态 Git 命令目录
 
-状态：进行中。
+状态：阶段性完成；暂停继续扩充静态目录，优先推进动态候选与交互体验。
 
 已实现一级命令：
 
 ```text
-status      add         commit      branch      switch
-checkout    restore     log         diff        merge
-rebase      fetch       pull        push        stash
-clone       init        remote      tag
+status       add          commit       branch       switch
+checkout     restore      log          diff         merge
+rebase       fetch        pull         push         stash
+clone        init         remote       tag          reset
+revert       cherry-pick  clean        rm           mv
+worktree     submodule    bisect       show         blame
+grep         shortlog     describe     reflog
 ```
 
-已实现 `git remote` 二级命令：
+已实现二级命令目录：
 
 ```text
-add         rename      remove      set-head    set-branches
-get-url     set-url     show        prune       update
+remote:     add rename remove set-head set-branches get-url set-url show prune update
+worktree:   add list lock move prune remove repair unlock
+submodule:  add status init deinit update set-branch set-url summary foreach sync absorbgitdirs
+bisect:     start good bad terms skip next reset visualize replay log run new old view help
+reflog:     show list exists write delete drop expire
 ```
 
-上述命令已经包含一批常用 option、说明、短参数别名和行为测试。候选会根据当前 token 前缀过滤，不会在没有匹配项时固定占用终端高度。
+上述命令已经包含一批常用 option、说明、短参数别名、参数值提示、互斥关系和行为测试。候选会根据当前 token 前缀过滤，不会在没有匹配项时固定占用终端高度。
 
-下一批计划：
+后续计划：
 
-- 增加 `reset`、`revert`、`cherry-pick` 的一级命令和常用 option。
-- 增加 `bisect`、`worktree`、`submodule` 及其二级命令。
-- 继续补齐现有命令常用的长参数和短参数别名。
+- 暂停为了数量继续扩充静态命令；根据真实用户测试和工作流补充缺失项。
+- 后续按需增加 `apply`、`am`、`format-patch`、`archive`、`bundle`、`config`、`maintenance`、`gc` 和 `fsck` 等命令。
+- 继续校正现有命令的长短参数别名、可重复参数和条件互斥关系。
 - 为危险操作补充清楚的风险说明，例如强制推送、硬重置和删除分支。
 
 验收标准：常用 Git 工作流可以依赖 Gogit 发现主要命令和 option；新增的每组目录数据都有匹配、插入和排除行为测试。
@@ -82,7 +88,7 @@ get-url     set-url     show        prune       update
 - `--option=value` 形式；
 - 参数值提示只用于显示，不会把 `<value>` 占位文本插入命令。
 
-当前已覆盖部分 `commit`、`clone`、`init`、`remote` 和 `tag` 参数，包括 `remote` 二级命令的重复参数与互斥参数处理。
+当前已覆盖 `commit`、`clone`、`init`、`remote`、`tag`、历史编辑、文件管理、rebase、worktree、submodule、bisect、对象检查与 reflog 等命令，包括重复参数、参数别名与互斥参数处理。
 
 下一批计划：
 
@@ -110,7 +116,7 @@ git clone <repository> <directory>
 - 远程跟踪分支候选。
 - 当前分支标识。
 - 分支查询取消、超时和仓库目录切换。
-- `switch`、`checkout`、`merge`、`rebase`、`reset`、`log`、`diff`、`pull` 和 `push` 等上下文中的分支候选路由。
+- `switch`、`checkout`、`merge`、`rebase`、`reset`、`log`、`diff`、`pull`、`push`、`bisect`、`show`、`blame`、`shortlog`、`describe` 和 `reflog` 等上下文中的分支候选路由。
 
 下一批计划：
 
@@ -119,6 +125,9 @@ git clone <repository> <directory>
 - 已修改、已删除和未跟踪文件候选；
 - 适合当前命令的 revision、commit 和路径候选；
 - 缓存、防抖和统一的异步取消机制，避免每次按键都启动 Git 进程。
+- 候选显示数量上限与个性化排序：默认最多显示 6 条，并优先展示用户更常使用的命令。
+
+候选排序暂不使用固定的全局优先级。后续在历史持久化基础上记录每个用户的命令使用频率，并结合当前前缀、命令上下文和最近使用时间计算顺序；没有历史数据时保持静态目录的稳定顺序。使用频率统计需要有明确的数据范围、关闭方式和敏感信息保护策略。
 
 示例：
 
@@ -172,6 +181,8 @@ git commit -m 'fix message'
 - Tab 补全、候选选择和草稿恢复；
 - 多行 bracketed paste；
 - Unicode rune 编辑和终端单元格宽度计算。
+- 长命令保持单行显示，并根据终端宽度滚动可见输入区域。
+- 在上一条命令结束和下一条 Prompt 之间插入空行，提升输出区分度。
 
 下一批计划：
 
@@ -276,6 +287,7 @@ git commit -m 'fix message'
 - CI 覆盖 Windows、Linux 和 macOS。
 - `v*.*.*` tag 会构建 Windows amd64、Linux amd64 和 macOS arm64 包。
 - Release workflow 会生成压缩包、SHA-256 校验文件和 GitHub Release。
+- `nightly` 与 `nightly-*` tag 可以创建预发布版本，供正式发布前试用和回归测试。
 
 仍需完成：
 
@@ -292,12 +304,13 @@ git commit -m 'fix message'
 
 接下来建议按以下顺序推进：
 
-1. 动态 remote、tag 和文件候选；
+1. 动态 remote、tag、revision 和文件候选；
 2. 支持 Git 全局 option、引号、路径和 Shell 命令边界；
-3. 补充 `reset`、`revert`、`cherry-pick`、`worktree`、`submodule` 等目录；
-4. 常用编辑快捷键与历史持久化；
+3. 实现历史持久化，并在此基础上增加默认最多 6 条的候选限制与用户频率排序；
+4. 常用编辑快捷键；
 5. Prompt/显示配置；
-6. 完整端到端测试、版本命令和首次正式发布。
+6. 根据真实使用反馈按需补充静态 Git 命令；
+7. 完整端到端测试、版本命令和首次正式发布。
 
 每完成一个阶段，至少执行：
 

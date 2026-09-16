@@ -244,7 +244,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 				lineEditor.Replace(
 					context.TokenStart,
 					context.TokenEnd,
-					suggestions[selected].Value,
+					completionInsertionValue(suggestions[selected]),
 				)
 
 				suggestionMode = false
@@ -481,6 +481,15 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 			}
 			return true, nil
 		}
+	}
+}
+
+func completionInsertionValue(candidate suggest.Suggestion) string {
+	switch candidate.Kind {
+	case suggest.KindBranch, suggest.KindRemote, suggest.KindTag:
+		return quoteCommandArgument(candidate.Value)
+	default:
+		return candidate.Value
 	}
 }
 

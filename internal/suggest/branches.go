@@ -13,10 +13,7 @@ import (
 
 // LoadRepositoryCandidates loads dynamic values from the repository that
 // contains directory.
-func LoadRepositoryCandidates(
-	ctx context.Context,
-	directory string,
-) (RepositoryCandidates, error) {
+func LoadRepositoryCandidates(ctx context.Context, directory string) (RepositoryCandidates, error) {
 	branches, err := LoadBranches(ctx, directory)
 	if err != nil {
 		return RepositoryCandidates{}, err
@@ -77,11 +74,7 @@ func LoadRemotes(ctx context.Context, directory string) ([]Suggestion, error) {
 
 // runRepositoryGit runs a Git command in directory. A Git command failure,
 // such as directory not being a repository, produces no candidates.
-func runRepositoryGit(
-	ctx context.Context,
-	directory string,
-	arguments ...string,
-) ([]byte, error) {
+func runRepositoryGit(ctx context.Context, directory string, arguments ...string) ([]byte, error) {
 	if directory == "" {
 		return nil, nil
 	}
@@ -110,11 +103,7 @@ func runRepositoryGit(
 	return nil, err
 }
 
-func parseNamedSuggestions(
-	output []byte,
-	kind Kind,
-	description string,
-) []Suggestion {
+func parseNamedSuggestions(output []byte, kind Kind, description string) []Suggestion {
 	suggestions := make([]Suggestion, 0)
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 

@@ -7,8 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
+
+func quoteCommandArgument(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+}
 
 func systemShell(marker string) (*exec.Cmd, commandWrapper, func(), error) {
 	shell := os.Getenv("SHELL")

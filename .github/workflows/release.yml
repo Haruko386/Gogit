@@ -106,7 +106,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           release_flags=()
-          if [[ "${GITHUB_REF_NAME}" == nightly* ]]; then
+          if [[ "${GITHUB_REF_NAME}" == "nightly" || "${GITHUB_REF_NAME}" == nightly-* ]]; then
+            release_flags+=(--latest=false)
             release_flags+=(--prerelease)
           fi
 
