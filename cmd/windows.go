@@ -12,6 +12,9 @@ import (
 )
 
 func quoteCommandArgument(value string) string {
+	if isShellSafeArgument(value) {
+		return value
+	}
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
