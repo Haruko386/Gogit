@@ -493,6 +493,25 @@ func completionInsertionValue(candidate suggest.Suggestion) string {
 	}
 }
 
+func isShellSafeArgument(value string) bool {
+	if value == "" {
+		return false
+	}
+
+	for _, character := range value {
+		switch {
+		case character >= 'a' && character <= 'z':
+		case character >= 'A' && character <= 'Z':
+		case character >= '0' && character <= '9':
+		case character == '_', character == '-', character == '.', character == '/':
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
 func formatPrompt(state protocol.Prompt) (string, int) {
 	var output strings.Builder
 

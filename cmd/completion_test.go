@@ -27,6 +27,23 @@ func TestCompletionInsertionValueQuotesRepositoryCandidates(t *testing.T) {
 	}
 }
 
+func TestCompletionInsertionValueLeavesSafeRepositoryNamesUnquoted(t *testing.T) {
+	for _, value := range []string{
+		"main",
+		"origin",
+		"origin/feature-1.2",
+	} {
+		candidate := suggest.Suggestion{
+			Value: value,
+			Kind:  suggest.KindBranch,
+		}
+
+		if got := completionInsertionValue(candidate); got != value {
+			t.Errorf("completionInsertionValue(%q) = %q", value, got)
+		}
+	}
+}
+
 func TestCompletionInsertionValueLeavesStaticCandidatesUnchanged(t *testing.T) {
 	candidate := suggest.Suggestion{
 		Value: "--show-current",
