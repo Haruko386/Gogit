@@ -18,6 +18,38 @@
 
 Windows 使用 PowerShell；Linux 和 macOS 支持 Bash、Zsh 与 POSIX sh，并在安装 Gogit Prompt 前加载用户 Shell 配置。普通命令和前台交互程序运行期间，输入直接交给 PTY，Gogit 只在自己的编辑状态下处理补全和行编辑。
 
+## 项目总 TODO List
+
+以下按可独立验收的功能里程碑统计，而不是按代码行数估算。截至 2026-09-22，共 19 项：已完成 10 项，进行中 2 项，待开始 7 项。当前阶段应优先完成动态候选、解析能力和历史持久化；剩余静态 Git 命令计划集中放到后续的大 PR 中补齐。
+
+### 已完成（10/19）
+
+- [x] 持久 PTY Shell、动态 Prompt 和 Prompt 协议恢复。
+- [x] 前台交互程序输入直通，以及命令结束后的编辑状态恢复。
+- [x] 常用 Git 一级、二级命令和 option 的阶段性静态目录。
+- [x] option 值提示、别名、可重复属性和互斥关系的基础模型。
+- [x] branch、remote 和 tag 动态候选。
+- [x] `git add` 与默认 `git restore` 的工作区文件候选。
+- [x] 基础行编辑、常用 Readline 快捷键和会话内历史。
+- [x] 多行粘贴排队执行，首行不重复渲染，前台程序粘贴保持直通。
+- [x] Unicode 宽度、长命令单行视口和候选区域重绘。
+- [x] Windows、Linux、macOS CI，以及 nightly 预发布 workflow。
+
+### 进行中（2/19）
+
+- [ ] **动态候选**：补充 `restore --staged`、revision、commit 和更多路径上下文，并减少重复 Git 子进程查询。
+- [ ] **端到端验收**：扩展 PowerShell 5.1/7、Bash、Zsh、Vim、less、REPL、SSH、resize 与异常退出矩阵。
+
+### 待开始（7/19）
+
+- [ ] 支持 Git 全局 option、引号、转义和 Shell 命令边界。
+- [ ] 实现历史持久化、敏感命令过滤、多进程安全写入和 Ctrl+R 搜索。
+- [ ] 默认最多显示 6 条候选，并按用户使用频率和最近使用时间排序。
+- [ ] 增加 Prompt、颜色、候选数量和显示内容配置。
+- [ ] 在独立大 PR 中集中补齐剩余静态 Git 命令及 option。
+- [ ] 增加 `gogit --help`、`gogit --version`、升级与卸载流程。
+- [ ] 完成正式版本验收并发布第一个稳定版 tag。
+
 ## P0：发布前必须解决
 
 ### 1. Prompt 协议与恢复能力
