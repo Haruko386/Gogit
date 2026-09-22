@@ -43,6 +43,23 @@ func TestDecoderTreatsCRLFAsOneEnter(t *testing.T) {
 	}
 }
 
+func TestDecoderRecognizesEditingControlKeys(t *testing.T) {
+	var decoder Decoder
+	got := decoder.Feed([]byte{'\x01', '\x05', '\x0b', '\x0c', '\x15', '\x17'})
+	want := []Key{
+		{Type: KeyCtrlA},
+		{Type: KeyCtrlE},
+		{Type: KeyCtrlK},
+		{Type: KeyCtrlL},
+		{Type: KeyCtrlU},
+		{Type: KeyCtrlW},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Feed() = %#v, want %#v", got, want)
+	}
+}
+
 func TestDecoderFlushesStandaloneEscape(t *testing.T) {
 	var decoder Decoder
 	if got := decoder.Feed([]byte("\x1b")); len(got) != 0 {

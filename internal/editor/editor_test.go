@@ -91,3 +91,61 @@ func TestEditorMoveHomeAndEnd(t *testing.T) {
 		t.Fatalf("cursor after MoveEnd = %d, want %d", got, want)
 	}
 }
+
+func TestEditorDeletePreviousWord(t *testing.T) {
+	var e Editor
+	e.SetLine("git add 文件 name")
+
+	if !e.DeletePreviousWord() {
+		t.Fatal("DeletePreviousWord did not delete the last word")
+	}
+	if got, want := e.Line(), "git add 文件 "; got != want {
+		t.Fatalf("Line() = %q, want %q", got, want)
+	}
+
+	if !e.DeletePreviousWord() {
+		t.Fatal("DeletePreviousWord did not delete the Unicode word")
+	}
+	if got, want := e.Line(), "git add "; got != want {
+		t.Fatalf("Line() = %q, want %q", got, want)
+	}
+	if got, want := e.Cursor(), len([]rune("git add ")); got != want {
+		t.Fatalf("Cursor() = %d, want %d", got, want)
+	}
+}
+
+func TestEditorDeleteToStartAndEnd(t *testing.T) {
+	var e Editor
+	e.SetLine("git status --short")
+	for range len([]rune("--short")) {
+		e.MoveLeft()
+	}
+
+	if !e.DeleteToEnd() {
+		t.Fatal("DeleteToEnd did not delete the line suffix")
+	}
+	if got, want := e.Line(), "git status "; got != want {
+		t.Fatalf("Line() = %q, want %q", got, want)
+	}
+
+	e.SetLine("git status --short")
+	for range len([]rune("--short")) {
+		e.MoveLeft()
+	}
+	if !e.DeleteToStart() {
+		t.Fatal("DeleteToStart did not delete the line prefix")
+	}
+	if got, want := e.Line(), "--short"; got != want {
+		t.Fatalf("Line() = %q, want %q", got, want)
+	}
+	if got := e.Cursor(); got != 0 {
+		t.Fatalf("Cursor() = %d, want 0", got)
+	}
+}
+
+func TestEditorWordAndLineDeletionAtBoundaries(t *testing.T) {
+	var e Editor
+	if e.DeletePreviousWord() || e.DeleteToStart() || e.DeleteToEnd() {
+		t.Fatal("empty editor reported a deletion")
+	}
+}

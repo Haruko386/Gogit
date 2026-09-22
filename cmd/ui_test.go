@@ -104,6 +104,11 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 
 	writePromptFrame(t, shellWriter, marker)
 	waitForOutput(t, stdout)
+	if _, err := stdinWriter.Write([]byte{'\x0c'}); err != nil {
+		t.Fatal(err)
+	}
+	waitForOutputContaining(t, stdout, "\x1b[2J\x1b[H")
+	assertNoShellWrite(t, shell.writes)
 
 	if _, err := stdinWriter.Write([]byte("\x1b[200~git status\r\n")); err != nil {
 		t.Fatal(err)
@@ -144,6 +149,10 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertShellWrite(t, shell.writes, "\x03")
+	if _, err := stdinWriter.Write([]byte{'\x0c'}); err != nil {
+		t.Fatal(err)
+	}
+	assertShellWrite(t, shell.writes, "\x0c")
 
 	if err := closeStdinWriter(); err != nil {
 		t.Fatal(err)
