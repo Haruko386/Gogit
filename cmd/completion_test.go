@@ -11,6 +11,7 @@ func TestCompletionInsertionValueQuotesRepositoryCandidates(t *testing.T) {
 		suggest.KindBranch,
 		suggest.KindRemote,
 		suggest.KindTag,
+		suggest.KindFile,
 	} {
 		candidate := suggest.Suggestion{
 			Value:       "release; echo unsafe",

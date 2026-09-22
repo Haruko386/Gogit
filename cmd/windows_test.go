@@ -190,7 +190,10 @@ func TestPowerShellInteractiveInputDoesNotEchoProtocolWrapper(t *testing.T) {
 		return bytes.Count(data, []byte(protocol.EndMarker(marker))) >= 1
 	})
 
-	input := []byte("Write-Output gogit-interactive-ok\r")
+	input := []byte(
+		"Write-Output gogit-interactive-ok # " +
+			strings.Repeat("long-pasted-command-", 10) + "\r",
+	)
 	if err := writeAll(shell, input); err != nil {
 		t.Fatal(err)
 	}
@@ -198,6 +201,9 @@ func TestPowerShellInteractiveInputDoesNotEchoProtocolWrapper(t *testing.T) {
 		return bytes.Count(data, []byte(protocol.EndMarker(marker))) >= 2 &&
 			bytes.Contains(data, []byte("gogit-interactive-ok"))
 	})
+	if got := bytes.Count(output, []byte("long-pasted-command-")); got != 10 {
+		t.Fatalf("long input was echoed %d times, want 10 segments once: %q", got, output)
+	}
 
 	if bytes.Contains(output, []byte("$__gogit_command")) ||
 		bytes.Contains(output, []byte("FromBase64String")) {

@@ -2054,3 +2054,83 @@ func TestAnalyzeSwitchOnlySuggestsTagsWhenDetached(t *testing.T) {
 		t.Fatalf("normal switch suggested tags: %#v", result.Suggestions)
 	}
 }
+
+func TestAnalyzeSuggestsWorkingTreeFiles(t *testing.T) {
+	repository := RepositoryCandidates{
+		Files: []Suggestion{
+			{Value: "README.md", Kind: KindFile},
+			{Value: "internal/editor/editor.go", Kind: KindFile},
+			{Value: "docs/release notes.md", Kind: KindFile},
+		},
+		RestorableFiles: []Suggestion{
+			{Value: "README.md", Kind: KindFile},
+		},
+	}
+
+	tests := []struct {
+		line string
+		want string
+	}{
+		{
+			line: "git add int",
+			want: "internal/editor/editor.go",
+		},
+		{
+			line: "git restore READ",
+			want: "README.md",
+		},
+		{
+			line: "git add docs/re",
+			want: "docs/release notes.md",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.line, func(t *testing.T) {
+			result := AnalyzeWithRepository(
+				test.line,
+				len([]rune(test.line)),
+				repository,
+			)
+
+			if len(result.Suggestions) != 1 ||
+				result.Suggestions[0].Value != test.want {
+				t.Fatalf(
+					"AnalyzeWithRepository(%q) = %#v, want %q",
+					test.line,
+					result.Suggestions,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestAnalyzeDoesNotSuggestFilesOutsidePathContexts(t *testing.T) {
+	repository := RepositoryCandidates{
+		Files: []Suggestion{
+			{Value: "internal/editor/editor.go", Kind: KindFile},
+		},
+	}
+
+	for _, line := range []string{
+		"git status int",
+		"git restore int",
+		"git add --i",
+		"git restore --s",
+		"git restore --staged int",
+		"git restore --source=HEAD int",
+		"git add --pathspec-from-file=paths.txt int",
+	} {
+		result := AnalyzeWithRepository(
+			line,
+			len([]rune(line)),
+			repository,
+		)
+		for _, candidate := range result.Suggestions {
+			if candidate.Kind == KindFile {
+				t.Fatalf("%q unexpectedly suggested file %#v", line, candidate)
+			}
+		}
+	}
+}

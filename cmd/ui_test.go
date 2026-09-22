@@ -110,10 +110,17 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 	waitForOutputContaining(t, stdout, "\x1b[2J\x1b[H")
 	assertNoShellWrite(t, shell.writes)
 
-	if _, err := stdinWriter.Write([]byte("\x1b[200~git status\r\n")); err != nil {
+	if _, err := stdinWriter.Write([]byte(
+		"\x1b[200~git status\r\ngo test ./...\r\n\x1b[20",
+	)); err != nil {
 		t.Fatal(err)
 	}
+	assertNoShellWrite(t, shell.writes)
+	assertOutputDoesNotContain(t, stdout, "git status")
 
+	if _, err := stdinWriter.Write([]byte("1~")); err != nil {
+		t.Fatal(err)
+	}
 	assertShellWrite(t, shell.writes, "wrapped(git status)\r")
 
 	if _, err := io.WriteString(shellWriter, "command output\r\n"); err != nil {
@@ -127,14 +134,6 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 		"command output\r\n\r\n",
 	)
 
-	if _, err := stdinWriter.Write([]byte("go test ./...\r\n\x1b[20")); err != nil {
-		t.Fatal(err)
-	}
-	assertNoShellWrite(t, shell.writes)
-
-	if _, err := stdinWriter.Write([]byte("1~")); err != nil {
-		t.Fatal(err)
-	}
 	assertShellWrite(t, shell.writes, "wrapped(go test ./...)\r")
 
 	// Once editing is false, a complete line may belong to an interactive
@@ -153,6 +152,14 @@ func TestRunShellUIReplaysCommandsAfterMultilinePaste(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertShellWrite(t, shell.writes, "\x0c")
+	if _, err := stdinWriter.Write([]byte("\x1b[200~interactive paste")); err != nil {
+		t.Fatal(err)
+	}
+	assertShellWrite(t, shell.writes, "\x1b[200~interactive paste")
+	if _, err := stdinWriter.Write([]byte("\r\x1b[201~")); err != nil {
+		t.Fatal(err)
+	}
+	assertShellWrite(t, shell.writes, "\r\x1b[201~")
 
 	if err := closeStdinWriter(); err != nil {
 		t.Fatal(err)
@@ -254,4 +261,16 @@ func waitForOutputContaining(t *testing.T, output *os.File, want string) {
 		want,
 		data,
 	)
+}
+
+func assertOutputDoesNotContain(t *testing.T, output *os.File, unwanted string) {
+	t.Helper()
+
+	data, err := os.ReadFile(output.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), unwanted) {
+		t.Fatalf("terminal output unexpectedly contains %q: %q", unwanted, data)
+	}
 }

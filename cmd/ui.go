@@ -372,8 +372,6 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 			}
 
 			wasPasting := pasteState.active
-			pasteState.observe(event.data)
-
 			if !editing && !wasPasting {
 				if err := writeAll(shellSession, event.data); err != nil {
 					return false, fmt.Errorf(
@@ -383,7 +381,9 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 				}
 				continue
 			}
-			if wasPasting {
+
+			pasteState.observe(event.data)
+			if wasPasting || pasteState.active {
 				pendingKeys = append(pendingKeys, decoder.Feed(event.data)...)
 				changed, err := replayPendingKeys()
 				if errors.Is(err, io.EOF) {
@@ -520,7 +520,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 
 func completionInsertionValue(candidate suggest.Suggestion) string {
 	switch candidate.Kind {
-	case suggest.KindBranch, suggest.KindRemote, suggest.KindTag:
+	case suggest.KindBranch, suggest.KindRemote, suggest.KindTag, suggest.KindFile:
 		return quoteCommandArgument(candidate.Value)
 	default:
 		return candidate.Value

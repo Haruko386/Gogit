@@ -2,7 +2,9 @@ package suggest
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -88,6 +90,24 @@ func TestParseTagSuggestions(t *testing.T) {
 	}
 }
 
+func TestParseNullSeparatedSuggestions(t *testing.T) {
+	got := parseNullSeparatedSuggestions(
+		[]byte("README.md\x00docs/release notes.md\x00README.md\x00bad\x1b[31m\x00"),
+		KindFile,
+		"Repository file.",
+	)
+	want := []string{"README.md", "docs/release notes.md"}
+
+	if len(got) != len(want) {
+		t.Fatalf("parseNullSeparatedSuggestions() = %#v, want %q", got, want)
+	}
+	for index, value := range want {
+		if got[index].Value != value || got[index].Kind != KindFile {
+			t.Fatalf("file %d = %#v, want %q with kind %q", index, got[index], value, KindFile)
+		}
+	}
+}
+
 func TestLoadRepositoryCandidates(t *testing.T) {
 	directory := t.TempDir()
 	runGit := func(arguments ...string) {
@@ -102,13 +122,31 @@ func TestLoadRepositoryCandidates(t *testing.T) {
 	}
 
 	runGit("init")
+	modifiedPath := filepath.Join(directory, "modified file.txt")
+	deletedPath := filepath.Join(directory, "deleted.txt")
+	if err := os.WriteFile(modifiedPath, []byte("original\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(deletedPath, []byte("delete me\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
 	runGit(
 		"-c", "user.name=Gogit Test",
 		"-c", "user.email=gogit@example.invalid",
-		"commit", "--allow-empty", "-m", "initial",
+		"commit", "-m", "initial",
 	)
 	runGit("remote", "add", "origin", "https://example.invalid/repository.git")
 	runGit("tag", "v1.0.0")
+	if err := os.WriteFile(modifiedPath, []byte("changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(deletedPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "untracked.txt"), []byte("new\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	got, err := LoadRepositoryCandidates(context.Background(), directory)
 	if err != nil {
@@ -127,6 +165,16 @@ func TestLoadRepositoryCandidates(t *testing.T) {
 
 	assertCandidate(got.Remotes, "origin", KindRemote)
 	assertCandidate(got.Tags, "v1.0.0", KindTag)
+	assertCandidate(got.Files, "modified file.txt", KindFile)
+	assertCandidate(got.Files, "deleted.txt", KindFile)
+	assertCandidate(got.Files, "untracked.txt", KindFile)
+	assertCandidate(got.RestorableFiles, "modified file.txt", KindFile)
+	assertCandidate(got.RestorableFiles, "deleted.txt", KindFile)
+	for _, candidate := range got.RestorableFiles {
+		if candidate.Value == "untracked.txt" {
+			t.Fatalf("untracked file was marked restorable: %#v", got.RestorableFiles)
+		}
+	}
 	if len(got.Branches) == 0 {
 		t.Fatal("repository branch was not loaded")
 	}
