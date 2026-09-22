@@ -216,6 +216,40 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 				changed = lineEditor.MoveEnd() || changed
 				suggestionMode = false
 				selected = -1
+			case terminal.KeyCtrlA:
+				changed = lineEditor.MoveHome() || changed
+				suggestionMode = false
+				selected = -1
+			case terminal.KeyCtrlE:
+				changed = lineEditor.MoveEnd() || changed
+				suggestionMode = false
+				selected = -1
+			case terminal.KeyCtrlW:
+				changed = lineEditor.DeletePreviousWord() || changed
+				suggestionMode = false
+				selected = -1
+			case terminal.KeyCtrlU:
+				changed = lineEditor.DeleteToStart() || changed
+				suggestionMode = false
+				selected = -1
+			case terminal.KeyCtrlK:
+				changed = lineEditor.DeleteToEnd() || changed
+				suggestionMode = false
+				selected = -1
+			case terminal.KeyCtrlL:
+				if err := writeOutput(renderer.Clear()); err != nil {
+					return changed, consumed, err
+				}
+				if err := writeOutput("\x1b[2J\x1b[H"); err != nil {
+					return changed, consumed, err
+				}
+				changed = true
+			case terminal.KeyEscape:
+				if suggestionMode || selected != -1 {
+					changed = true
+				}
+				suggestionMode = false
+				selected = -1
 			case terminal.KeyUp:
 				suggestions := analyze().Suggestions
 

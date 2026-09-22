@@ -60,10 +60,22 @@ func (d *Decoder) Feed(data []byte) []Key {
 			keys = append(keys, Key{Type: KeyBackspace})
 		case '\t':
 			keys = append(keys, Key{Type: KeyTab})
+		case '\x01':
+			keys = append(keys, Key{Type: KeyCtrlA})
 		case '\x03':
 			keys = append(keys, Key{Type: KeyCtrlC})
 		case '\x04':
 			keys = append(keys, Key{Type: KeyCtrlD})
+		case '\x05':
+			keys = append(keys, Key{Type: KeyCtrlE})
+		case '\x0b':
+			keys = append(keys, Key{Type: KeyCtrlK})
+		case '\x0c':
+			keys = append(keys, Key{Type: KeyCtrlL})
+		case '\x15':
+			keys = append(keys, Key{Type: KeyCtrlU})
+		case '\x17':
+			keys = append(keys, Key{Type: KeyCtrlW})
 		default:
 			if !utf8.FullRune(d.pending) {
 				return keys

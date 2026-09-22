@@ -1,5 +1,7 @@
 package editor
 
+import "unicode"
+
 // Editor owns the text and cursor state for one command line. Cursor offsets
 // are rune indexes rather than byte indexes so non-ASCII input is not split.
 type Editor struct {
@@ -82,6 +84,47 @@ func (e *Editor) Delete() bool {
 	}
 
 	e.buffer = append(e.buffer[:e.cursor], e.buffer[e.cursor+1:]...)
+	return true
+}
+
+// DeletePreviousWord removes whitespace and the word immediately before the
+// cursor, matching the common Ctrl+W shell editing behavior.
+func (e *Editor) DeletePreviousWord() bool {
+	if e.cursor == 0 {
+		return false
+	}
+
+	start := e.cursor
+	for start > 0 && unicode.IsSpace(e.buffer[start-1]) {
+		start--
+	}
+	for start > 0 && !unicode.IsSpace(e.buffer[start-1]) {
+		start--
+	}
+
+	e.buffer = append(e.buffer[:start], e.buffer[e.cursor:]...)
+	e.cursor = start
+	return true
+}
+
+// DeleteToStart removes everything before the cursor.
+func (e *Editor) DeleteToStart() bool {
+	if e.cursor == 0 {
+		return false
+	}
+
+	e.buffer = append(e.buffer[:0], e.buffer[e.cursor:]...)
+	e.cursor = 0
+	return true
+}
+
+// DeleteToEnd removes everything from the cursor onward.
+func (e *Editor) DeleteToEnd() bool {
+	if e.cursor == len(e.buffer) {
+		return false
+	}
+
+	e.buffer = e.buffer[:e.cursor]
 	return true
 }
 

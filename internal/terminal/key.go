@@ -9,8 +9,14 @@ const (
 	KeyBackspace
 	KeyTab
 	KeyEscape
+	KeyCtrlA
 	KeyCtrlC
 	KeyCtrlD
+	KeyCtrlE
+	KeyCtrlK
+	KeyCtrlL
+	KeyCtrlU
+	KeyCtrlW
 	KeyUp
 	KeyDown
 	KeyLeft
