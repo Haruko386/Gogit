@@ -520,7 +520,9 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 
 func completionInsertionValue(candidate suggest.Suggestion) string {
 	switch candidate.Kind {
-	case suggest.KindBranch, suggest.KindRemote, suggest.KindTag, suggest.KindFile:
+	case suggest.KindFile:
+		return quoteCommandArgument(":(literal)" + candidate.Value)
+	case suggest.KindBranch, suggest.KindRemote, suggest.KindTag:
 		return quoteCommandArgument(candidate.Value)
 	default:
 		return candidate.Value
