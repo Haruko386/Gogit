@@ -232,3 +232,30 @@ func TestInputViewportHandlesWideCharacters(t *testing.T) {
 		t.Fatalf("cursor column = %d, want at most %d", cursorColumn, view.Width-1)
 	}
 }
+
+func TestRendererShowsSuggestionViewportPosition(t *testing.T) {
+	suggestions := make([]suggest.Suggestion, 6)
+	for index := range suggestions {
+		suggestions[index] = suggest.Suggestion{
+			Value:       fmt.Sprintf("suggestion-%d", index+2),
+			Description: "Candidate description.",
+		}
+	}
+
+	var renderer Renderer
+	output := renderer.Render(View{
+		Prompt:           "> ",
+		PromptWidth:      2,
+		Suggestions:      suggestions,
+		Selected:         5,
+		SuggestionOffset: 2,
+		SuggestionTotal:  10,
+	})
+
+	if !strings.Contains(output, "[3-8 / 10]") {
+		t.Fatalf("viewport position not rendered: %q", output)
+	}
+	if !strings.Contains(output, "Candidate description.") {
+		t.Fatalf("selected description not rendered: %q", output)
+	}
+}

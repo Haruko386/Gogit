@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	colorCyan   = "\x1b[36m"
-	colorYellow = "\x1b[33m"
-	colorReset  = "\x1b[0m"
+	colorCyan               = "\x1b[36m"
+	colorYellow             = "\x1b[33m"
+	colorReset              = "\x1b[0m"
+	maxDisplayedSuggestions = 6
 )
 
 type streamEvent struct {
@@ -34,6 +35,13 @@ type streamEvent struct {
 type repositoryLoadResult struct {
 	generation uint64
 	candidates suggest.RepositoryCandidates
+}
+
+type suggestionViewport struct {
+	suggestions []suggest.Suggestion
+	selected    int
+	offset      int
+	total       int
 }
 
 type commandWrapper func(string) string
@@ -168,8 +176,15 @@ func runShellUIWithHistory(
 
 	render := func() error {
 		terminalWidth := fallbackTerminalWidth
-		if width, _, err := term.GetSize(os.Stdout.Fd()); err == nil && width > 0 {
-			terminalWidth = width
+		terminalHeight := fallbackTerminalHeight
+
+		if width, height, err := term.GetSize(os.Stdout.Fd()); err == nil {
+			if width > 0 {
+				terminalWidth = width
+			}
+			if height > 0 {
+				terminalHeight = height
+			}
 		}
 
 		result := analyze()
@@ -186,15 +201,21 @@ func runShellUIWithHistory(
 			selected = -1
 		}
 
+		suggestionLimit := min(maxDisplayedSuggestions, max(terminalHeight-2, 1))
+
+		viewport := makeSuggestionViewport(suggestions, selected, suggestionLimit)
+
 		return writeOutput(renderer.Render(terminal.View{
-			Prompt:      prompt,
-			PromptWidth: promptWidth,
-			Width:       terminalWidth,
-			Line:        lineEditor.Line(),
-			Cursor:      lineEditor.Cursor(),
-			Suggestions: suggestions,
-			Selected:    selected,
-			Hint:        result.Hint,
+			Prompt:           prompt,
+			PromptWidth:      promptWidth,
+			Width:            terminalWidth,
+			Line:             lineEditor.Line(),
+			Cursor:           lineEditor.Cursor(),
+			Suggestions:      viewport.suggestions,
+			Selected:         viewport.selected,
+			SuggestionOffset: viewport.offset,
+			SuggestionTotal:  viewport.total,
+			Hint:             result.Hint,
 		}))
 	}
 
@@ -303,7 +324,11 @@ func runShellUIWithHistory(
 				lineEditor.Replace(
 					context.TokenStart,
 					context.TokenEnd,
-					completionInsertionValue(suggestions[selected]),
+					completionReplacementValue(
+						lineEditor.Line(),
+						context,
+						suggestions[selected],
+					),
 				)
 
 				suggestionMode = false
@@ -543,6 +568,20 @@ func runShellUIWithHistory(
 	}
 }
 
+func completionReplacementValue(line string, context suggest.Context, candidate suggest.Suggestion) string {
+	value := completionInsertionValue(candidate)
+
+	if context.TokenEnd != len([]rune(line)) {
+		return value
+	}
+
+	if strings.HasSuffix(value, "=") {
+		return value
+	}
+
+	return value + " "
+}
+
 func completionInsertionValue(candidate suggest.Suggestion) string {
 	switch candidate.Kind {
 	case suggest.KindFile:
@@ -698,4 +737,43 @@ func writeOutput(value string) error {
 		return fmt.Errorf("write terminal output: %w", err)
 	}
 	return nil
+}
+
+func makeSuggestionViewport(suggestions []suggest.Suggestion, selected, limit int) suggestionViewport {
+	total := len(suggestions)
+
+	if selected < 0 || selected >= total {
+		selected = -1
+	}
+
+	if limit <= 0 || total <= limit {
+		return suggestionViewport{
+			suggestions: suggestions,
+			selected:    selected,
+			total:       total,
+		}
+	}
+
+	offset := 0
+	if selected >= limit {
+		offset = selected - limit + 1
+	}
+
+	maxOffset := total - limit
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+
+	visible := suggestions[offset : offset+limit]
+	visibleSelected := -1
+	if selected >= offset && selected < offset+len(visible) {
+		visibleSelected = selected - offset
+	}
+
+	return suggestionViewport{
+		suggestions: visible,
+		selected:    visibleSelected,
+		offset:      offset,
+		total:       total,
+	}
 }

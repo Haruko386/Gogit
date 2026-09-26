@@ -23,14 +23,16 @@ const (
 // View contains everything needed to draw one editor frame. PromptWidth is
 // the visible cell width and excludes ANSI color bytes in Prompt.
 type View struct {
-	Prompt      string
-	PromptWidth int
-	Width       int
-	Line        string
-	Cursor      int
-	Suggestions []suggest.Suggestion
-	Selected    int
-	Hint        *suggest.ValueHint
+	Prompt           string
+	PromptWidth      int
+	Width            int
+	Line             string
+	Cursor           int
+	Suggestions      []suggest.Suggestion
+	Selected         int
+	SuggestionOffset int
+	SuggestionTotal  int
+	Hint             *suggest.ValueHint
 }
 
 // Renderer redraws one input line and its suggestion area.
@@ -100,8 +102,24 @@ func (r *Renderer) Render(view View) string {
 		}
 		if index == len(view.Suggestions) && len(view.Suggestions) > 0 {
 			description := view.Suggestions[descriptionIndex].Description
+
 			output.WriteString("    ")
 			output.WriteString(colorGray)
+
+			if view.SuggestionTotal > len(view.Suggestions) {
+				fmt.Fprintf(
+					&output,
+					"[%d-%d / %d]",
+					view.SuggestionOffset+1,
+					view.SuggestionOffset+len(view.Suggestions),
+					view.SuggestionTotal,
+				)
+
+				if description != "" {
+					output.WriteByte(' ')
+				}
+			}
+
 			output.WriteString(description)
 			output.WriteString(colorReset)
 			continue
