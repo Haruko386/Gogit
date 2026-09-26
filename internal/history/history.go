@@ -9,6 +9,24 @@ type History struct {
 	position int
 	draft    string
 	browsing bool
+	limit    int
+}
+
+func New(entries []string, limit int) History {
+	if limit <= 0 {
+		limit = DefaultLimit
+	}
+
+	history := History{
+		limit: limit,
+	}
+
+	for _, entry := range entries {
+		history.Add(entry)
+	}
+
+	history.Reset()
+	return history
 }
 
 // Reset ends the current history navigation.
@@ -19,18 +37,33 @@ func (h *History) Reset() {
 }
 
 // Add records one completed command.
-func (h *History) Add(command string) {
+func (h *History) Add(command string) bool {
 	if strings.TrimSpace(command) == "" {
 		h.Reset()
-		return
+		return false
 	}
 
-	// avoid storing the same command twice in succession.
-	if len(h.entries) == 0 || h.entries[len(h.entries)-1] != command {
-		h.entries = append(h.entries, command)
+	if len(h.entries) > 0 &&
+		h.entries[len(h.entries)-1] == command {
+		h.Reset()
+		return false
+	}
+
+	h.entries = append(h.entries, command)
+
+	limit := h.limit
+	if limit <= 0 {
+		limit = DefaultLimit
+	}
+	if len(h.entries) > limit {
+		h.entries = append(
+			[]string(nil),
+			h.entries[len(h.entries)-limit:]...,
+		)
 	}
 
 	h.Reset()
+	return true
 }
 
 // Previous moves to an older command.

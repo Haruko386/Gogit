@@ -69,7 +69,33 @@ func (s *bracketedPasteState) observe(data []byte) {
 	}
 }
 
-func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-chan error, wrappers ...commandWrapper) (resizeFinished bool, resultErr error) {
+func recordCommand(commandHistory *history.History, persistCommand func(string) error, command string) {
+	if !commandHistory.Add(command) || persistCommand == nil {
+		return
+	}
+	// History persistence is best-effort and must never interrupt the shell.
+	_ = persistCommand(command)
+}
+
+func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-chan error, wrappers ...commandWrapper) (bool, error) {
+	return runShellUIWithHistory(
+		shellSession,
+		marker,
+		resizeDone,
+		history.New(nil, history.DefaultLimit),
+		nil,
+		wrappers...,
+	)
+}
+
+func runShellUIWithHistory(
+	shellSession session.ShellSession,
+	marker string,
+	resizeDone <-chan error,
+	commandHistory history.History,
+	persistCommand func(string) error,
+	wrappers ...commandWrapper,
+) (resizeFinished bool, resultErr error) {
 	inputEvents := readStream(os.Stdin)
 	outputEvents := readStream(shellSession)
 	shellDone := make(chan error, 1)
@@ -82,7 +108,6 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 	var (
 		decoder              terminal.Decoder
 		lineEditor           editor.Editor
-		commandHistory       history.History
 		renderer             terminal.Renderer
 		markerScan           = protocol.NewScanner(marker)
 		selected             = -1
@@ -320,7 +345,7 @@ func runShellUI(shellSession session.ShellSession, marker string, resizeDone <-c
 				}
 
 				command := lineEditor.Line()
-				commandHistory.Add(command)
+				recordCommand(&commandHistory, persistCommand, command)
 				command = wrapCommand(command) + "\r"
 
 				if err := writeAll(shellSession, []byte(command)); err != nil {
