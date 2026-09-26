@@ -1,6 +1,9 @@
 package history
 
 import (
+	"bufio"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -91,4 +94,61 @@ func TestStoreLoadReturnsOpenError(t *testing.T) {
 	if _, err := store.Load(); err == nil {
 		t.Fatal("Load() returned nil error for an invalid path")
 	}
+}
+
+func TestStoreCompactsPersistedHistoryPastThreshold(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.jsonl")
+	store := NewStore(path, 3)
+
+	for index := range 6 {
+		if err := store.Append(fmt.Sprintf("command-%d", index)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if got := countHistoryRecords(t, path); got != 6 {
+		t.Fatalf("record count at threshold = %d, want 6", got)
+	}
+
+	if err := store.Append("command-6"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := countHistoryRecords(t, path); got != 3 {
+		t.Fatalf("record count after compaction = %d, want 3", got)
+	}
+
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"command-4", "command-5", "command-6"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Load() after compaction = %#v, want %#v", got, want)
+	}
+}
+
+func countHistoryRecords(t *testing.T, path string) int {
+	t.Helper()
+
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	count := 0
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var command string
+		if err := json.Unmarshal(scanner.Bytes(), &command); err != nil {
+			t.Fatalf("decode history record: %v", err)
+		}
+		count++
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	return count
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -35,41 +36,8 @@ func DefaultStore() (*Store, error) {
 }
 
 func (s Store) Load() ([]string, error) {
-	file, err := os.Open(s.path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	entries := make([]string, 0)
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-
-	for scanner.Scan() {
-		var command string
-		if err := json.Unmarshal(scanner.Bytes(), &command); err != nil {
-			// A corrupt record must not prevent Gogit from starting.
-			continue
-		}
-
-		if strings.TrimSpace(command) == "" {
-			continue
-		}
-
-		entries = append(entries, command)
-		if len(entries) > s.limit {
-			entries = append([]string(nil), entries[len(entries)-s.limit:]...)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	return entries, nil
+	entries, _, err := s.readEntries()
+	return entries, err
 }
 
 func (s Store) Append(command string) error {
@@ -101,7 +69,110 @@ func (s Store) Append(command string) error {
 		return err
 	}
 
-	return file.Close()
+	if err := file.Close(); err != nil {
+		return err
+	}
+
+	return s.compactIfNeeded()
+}
+
+func (s Store) compactIfNeeded() error {
+	entries, count, err := s.readEntries()
+	if err != nil {
+		return err
+	}
+	if count <= 2*s.limit {
+		return nil
+	}
+
+	directory := filepath.Dir(s.path)
+	temporary, err := os.CreateTemp(directory, ".gogit-history-*.tmp")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+
+	if err := temporary.Chmod(0o600); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+
+	encoder := json.NewEncoder(temporary)
+	for _, entry := range entries {
+		if err := encoder.Encode(entry); err != nil {
+			_ = temporary.Close()
+			return err
+		}
+	}
+
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+
+	return replaceFile(temporaryPath, s.path)
+}
+
+func (s Store) readEntries() ([]string, int, error) {
+	file, err := os.Open(s.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, 0, nil
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	defer file.Close()
+
+	entries := make([]string, 0, s.limit)
+	count := 0
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+
+	for scanner.Scan() {
+		var command string
+		if err := json.Unmarshal(scanner.Bytes(), &command); err != nil {
+			continue
+		}
+		if strings.TrimSpace(command) == "" {
+			continue
+		}
+
+		count++
+		entries = append(entries, command)
+		if len(entries) > s.limit {
+			entries = append([]string(nil), entries[len(entries)-s.limit:]...)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return entries, count, nil
+}
+
+func replaceFile(source, destination string) error {
+	renameErr := os.Rename(source, destination)
+	if renameErr == nil {
+		return nil
+	}
+	if runtime.GOOS != "windows" {
+		return renameErr
+	}
+
+	// Windows cannot rename over an existing file. Move the original aside
+	// first so a failed replacement can still restore it.
+	backup := source + ".old"
+	if err := os.Rename(destination, backup); err != nil {
+		return err
+	}
+
+	if err := os.Rename(source, destination); err != nil {
+		restoreErr := os.Rename(backup, destination)
+		return errors.Join(err, restoreErr)
+	}
+
+	return os.Remove(backup)
 }
 
 func ShouldPersist(command string) bool {
