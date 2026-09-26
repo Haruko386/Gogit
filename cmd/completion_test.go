@@ -27,6 +27,22 @@ func TestCompletionInsertionValueQuotesRepositoryCandidates(t *testing.T) {
 	}
 }
 
+func TestCompletionInsertionValueUsesLiteralPathspecForFiles(t *testing.T) {
+	candidate := suggest.Suggestion{
+		Value:       "docs/release*.md",
+		Description: "Repository file.",
+		Kind:        suggest.KindFile,
+	}
+
+	want := quoteCommandArgument(":(literal)" + candidate.Value)
+	if got := completionInsertionValue(candidate); got != want {
+		t.Fatalf("completionInsertionValue() = %q, want %q", got, want)
+	}
+	if candidate.Value != "docs/release*.md" || candidate.Description != "Repository file." {
+		t.Fatalf("completion changed candidate metadata: %#v", candidate)
+	}
+}
+
 func TestCompletionInsertionValueLeavesSafeRepositoryNamesUnquoted(t *testing.T) {
 	for _, value := range []string{
 		"main",

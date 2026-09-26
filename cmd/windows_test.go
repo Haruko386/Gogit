@@ -198,7 +198,6 @@ func TestPowerShellInteractiveInputDoesNotEchoProtocolWrapper(t *testing.T) {
 		return bytes.Count(data, []byte(protocol.EndMarker(marker))) >= 2 &&
 			bytes.Contains(data, []byte("gogit-interactive-ok"))
 	})
-
 	if bytes.Contains(output, []byte("$__gogit_command")) ||
 		bytes.Contains(output, []byte("FromBase64String")) {
 		t.Fatalf("internal PowerShell wrapper was echoed: %q", output)

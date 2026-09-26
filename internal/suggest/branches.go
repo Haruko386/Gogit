@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode"
 )
 
 // LoadRepositoryCandidates loads dynamic values from the repository that
@@ -29,10 +30,21 @@ func LoadRepositoryCandidates(ctx context.Context, directory string) (Repository
 		return RepositoryCandidates{}, err
 	}
 
+	files, err := LoadFiles(ctx, directory)
+	if err != nil {
+		return RepositoryCandidates{}, err
+	}
+	restorableFiles, err := LoadRestorableFiles(ctx, directory)
+	if err != nil {
+		return RepositoryCandidates{}, err
+	}
+
 	return RepositoryCandidates{
-		Branches: branches,
-		Remotes:  remotes,
-		Tags:     tags,
+		Branches:        branches,
+		Remotes:         remotes,
+		Tags:            tags,
+		Files:           files,
+		RestorableFiles: restorableFiles,
 	}, nil
 }
 
@@ -70,6 +82,45 @@ func LoadRemotes(ctx context.Context, directory string) ([]Suggestion, error) {
 		return nil, err
 	}
 	return parseNamedSuggestions(output, KindRemote, "Remote repository."), nil
+}
+
+func LoadFiles(ctx context.Context, directory string) ([]Suggestion, error) {
+	output, err := runRepositoryGit(
+		ctx,
+		directory,
+		"ls-files",
+		"-z",
+		"--modified",
+		"--deleted",
+		"--others",
+		"--exclude-standard",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseNullSeparatedSuggestions(output, KindFile,
+		"Modified, deleted, or untracked repository file."), nil
+}
+
+func LoadRestorableFiles(ctx context.Context, directory string) ([]Suggestion, error) {
+	output, err := runRepositoryGit(
+		ctx,
+		directory,
+		"ls-files",
+		"-z",
+		"--modified",
+		"--deleted",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseNullSeparatedSuggestions(
+		output,
+		KindFile,
+		"Modified or deleted tracked repository file.",
+	), nil
 }
 
 // runRepositoryGit runs a Git command in directory. A Git command failure,
@@ -112,6 +163,35 @@ func parseNamedSuggestions(output []byte, kind Kind, description string) []Sugge
 		if value == "" {
 			continue
 		}
+
+		suggestions = append(suggestions, Suggestion{
+			Value:       value,
+			Description: description,
+			Kind:        kind,
+		})
+	}
+
+	return suggestions
+}
+
+func parseNullSeparatedSuggestions(output []byte, kind Kind, description string) []Suggestion {
+	values := bytes.Split(output, []byte{0})
+	suggestions := make([]Suggestion, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+
+	for _, rawValue := range values {
+		if len(rawValue) == 0 {
+			continue
+		}
+
+		value := string(rawValue)
+		if strings.IndexFunc(value, unicode.IsControl) >= 0 {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
 
 		suggestions = append(suggestions, Suggestion{
 			Value:       value,

@@ -99,6 +99,13 @@ func AnalyzeWithRepository(line string, cursor int, repository RepositoryCandida
 }
 
 func repositorySuggestions(context Context, repository RepositoryCandidates) ([]Suggestion, bool) {
+	if acceptsFile(context) {
+		if context.WordsBefore[1] == "restore" {
+			return repository.RestorableFiles, true
+		}
+		return repository.Files, true
+	}
+
 	if acceptsRemote(context) {
 		return repository.Remotes, true
 	}
@@ -199,6 +206,31 @@ func acceptsTag(context Context) bool {
 		return false
 	default:
 		return acceptsBranch(context)
+	}
+}
+
+func acceptsFile(context Context) bool {
+	if context.Prefix == "" ||
+		strings.HasPrefix(context.Prefix, "-") ||
+		len(context.WordsBefore) < 2 {
+		return false
+	}
+
+	switch context.WordsBefore[1] {
+	case "add":
+		return !containsOption(
+			context.WordsBefore[2:],
+			"--pathspec-from-file",
+		)
+	case "restore":
+		return !containsOption(
+			context.WordsBefore[2:],
+			"-s", "--source",
+			"-S", "--staged",
+			"--pathspec-from-file",
+		)
+	default:
+		return false
 	}
 }
 
@@ -310,6 +342,16 @@ func containsAny(words []string, values ...string) bool {
 			if word == value {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func containsOption(words []string, values ...string) bool {
+	for _, word := range words {
+		name, _, _ := strings.Cut(word, "=")
+		if containsAny([]string{name}, values...) {
+			return true
 		}
 	}
 	return false
