@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Haruko386/Gogit/internal/history"
 	"github.com/Haruko386/Gogit/internal/protocol"
 	"github.com/Haruko386/Gogit/internal/session"
 	"github.com/charmbracelet/x/term"
@@ -47,6 +48,19 @@ func runPersistentShell() (resultErr error) {
 
 	shellSession := session.New(shellCommand, width, height)
 
+	commandHistory := history.New(nil, history.DefaultLimit)
+	var persistCommand func(string) error
+
+	historyStore, storeErr := history.DefaultStore()
+	if storeErr == nil {
+		entries, loadErr := historyStore.Load()
+		if loadErr == nil {
+			commandHistory = history.New(entries, history.DefaultLimit)
+		}
+
+		persistCommand = historyStore.Append
+	}
+
 	if err := shellSession.Start(); err != nil {
 		return fmt.Errorf("start shell: %w", err)
 	}
@@ -67,10 +81,12 @@ func runPersistentShell() (resultErr error) {
 	resizeCtx, stopResize := context.WithCancel(context.Background())
 	resizeDone := watchTerminalResize(resizeCtx, outputFD, shellSession, width, height)
 
-	resizeFinished, runErr := runShellUI(
+	resizeFinished, runErr := runShellUIWithHistory(
 		shellSession,
 		marker,
 		resizeDone,
+		commandHistory,
+		persistCommand,
 		wrapCommand,
 	)
 

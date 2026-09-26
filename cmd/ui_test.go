@@ -1,13 +1,16 @@
 package cmd
 
 import (
+	"errors"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Haruko386/Gogit/internal/history"
 	"github.com/Haruko386/Gogit/internal/protocol"
 )
 
@@ -272,5 +275,31 @@ func assertOutputDoesNotContain(t *testing.T, output *os.File, unwanted string) 
 	}
 	if strings.Contains(string(data), unwanted) {
 		t.Fatalf("terminal output unexpectedly contains %q: %q", unwanted, data)
+	}
+}
+
+func TestRecordCommandPersistsOnlyNewCommands(t *testing.T) {
+	commandHistory := history.New(
+		[]string{"git status"},
+		history.DefaultLimit,
+	)
+
+	var persisted []string
+	persistCommand := func(command string) error {
+		persisted = append(persisted, command)
+		return errors.New("simulated persistence failure")
+	}
+
+	recordCommand(&commandHistory, persistCommand, "git status")
+	recordCommand(&commandHistory, persistCommand, "git log")
+
+	want := []string{"git log"}
+	if !reflect.DeepEqual(persisted, want) {
+		t.Fatalf("persisted commands = %#v, want %#v", persisted, want)
+	}
+
+	command, ok := commandHistory.Previous("")
+	if !ok || command != "git log" {
+		t.Fatalf("latest command = %q, %t", command, ok)
 	}
 }

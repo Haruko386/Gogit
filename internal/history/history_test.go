@@ -57,3 +57,25 @@ func TestHistorySkipsConsecutiveDuplicates(t *testing.T) {
 		t.Fatal("duplicate command was stored")
 	}
 }
+
+func TestHistoryLimitsEntries(t *testing.T) {
+	history := New(nil, 2)
+
+	history.Add("git status")
+	history.Add("git add .")
+	history.Add("git commit")
+
+	command, ok := history.Previous("")
+	if !ok || command != "git commit" {
+		t.Fatalf("latest command = %q, %t", command, ok)
+	}
+
+	command, ok = history.Previous(command)
+	if !ok || command != "git add ." {
+		t.Fatalf("oldest retained command = %q, %t", command, ok)
+	}
+
+	if _, ok := history.Previous(command); ok {
+		t.Fatal("history retained more entries than its limit")
+	}
+}
